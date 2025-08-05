@@ -1,0 +1,10 @@
+vcenter_server   = "vcenter.example.com"
+username         = "administrator@vsphere.local"
+password         = "your-password"
+datacenter       = "Datacenter"
+cluster          = "Cluster"
+datastore        = "Datastore"
+network          = "VM Network"
+template_name    = "ubuntu-22.04-template"
+iso_url          = "http://your-server/ubuntu-22.04.iso"
+iso_checksum     = "your-real-sha256-checksum" # use sha256sum
