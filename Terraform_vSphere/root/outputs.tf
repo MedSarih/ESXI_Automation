@@ -1,20 +1,21 @@
-# Output a map of VM names to their IP addresses
+# Root essential outputs
 output "vm_ips" {
-  description = "Expose the VM IP map from the module"
-  value       = module.vms.vm_ips
+  description = "Map of VM names to their IP addresses"
+  value = {
+    for name, vm in module.vm :
+    name => vm.vm_ip
+  }
 }
 
-
-# Structured VM information for Ansible inventory generation
 output "vm_inventory" {
-  description = "Structured VM information for Ansible inventory generation"
+  description = "VM inventory for Ansible"
   value = {
-    # Loop through each VM configuration and create structured output
-    for key, config in var.vm_configs : key => {
-      name        = config.name              # VM name from configuration
-      ip          = module.vms.vm_ips[key]   # IP from module output
-      role        = config.role              # VM role from configuration
-      ansible_user = "ubuntu"                # User Ansible will use to connect
+    for name, cfg in var.vm_configs : name => {
+      name         = name
+      ip           = module.vm[name].vm_ip
+      ansible_user = "ubuntu"
+      role         = cfg.role
     }
   }
 }
+

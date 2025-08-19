@@ -1,9 +1,4 @@
-# Output VM IP addresses as a map from VM name to IP
-# lets ROOT easily see the IP addresses of all VMs 
-output "vm_ips" {
-  description = "Map of VM names to their IPs"
-  value = {
-    for name, vm in vsphere_virtual_machine.vm :
-    name => vm.default_ip_address
-  }
+output "vm_ip" {
+  value       = esxi_guest.vm.ip_address
+  description = "The IP address of this VM"
 }
