@@ -5,51 +5,43 @@ pipeline {
         // ESXi Connection Details
         ESXI_HOST = "172.20.10.51"
         ESXI_USERNAME = "root"
-        // ESXI_PASSWORD is loaded via credentials binding
-        // ESXI_PASSWORD = credentials('ESXI_PASSWORD') // Handled by withCredentials
 
         // Ansible VM Connection Details
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
-        // ANSIBLE_VM_CREDENTIALS (username/password) are loaded via credentials binding
-        // GRAFANA_ADMIN_PASSWORD is loaded via credentials binding
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Checkout the code from the configured SCM (GitHub)
-                // Jenkins job configuration specifies the repo URL and branch
-                echo "Checking out code from SCM..."
+                echo "📥 Checking out code from SCM..."
             }
         }
 
         stage('Terraform Operations') {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
-                    // Use Git Bash to run Terraform commands, relying on PATH
                     bat '''
-                        "C:\\Program Files\\Git\\bin\\sh.exe" -c "
-                            set -e # Exit immediately if a command exits with a non-zero status
-                            echo '=== Navigating to Terraform Directory ==='
-                            cd Terraform_vSphere
-                            pwd
+                        echo === Navigating to Terraform Directory ===
+                        cd Terraform_vSphere
 
-                            echo '=== Initializing Terraform ==='
-                            terraform init
+                        echo === Initializing Terraform ===
+                        terraform init
 
-                            echo '=== Validating Terraform Configuration ==='
-                            terraform validate
+                        echo === Validating Terraform Configuration ===
+                        terraform validate
 
-                            echo '=== Planning Terraform Changes ==='
-                            terraform plan \\
-                                -var=\\\"esxi_hostname=$ESXI_HOST\\\" \\
-                                -var=\\\"esxi_username=$ESXI_USERNAME\\\" \\
-                                -var=\\\"esxi_password=$TF_VAR_esxi_password\\\"
+                        echo === Planning Terraform Changes ===
+                        terraform plan ^
+                          -var="esxi_hostname=%ESXI_HOST%" ^
+                          -var="esxi_username=%ESXI_USERNAME%" ^
+                          -var="esxi_password=%TF_VAR_esxi_password%"
 
-                            echo '=== Applying Terraform Changes ==='
-                            terraform apply -auto-approve
-                        "
+                        echo === Applying Terraform Changes ===
+                        terraform apply -auto-approve ^
+                          -var="esxi_hostname=%ESXI_HOST%" ^
+                          -var="esxi_username=%ESXI_USERNAME%" ^
+                          -var="esxi_password=%TF_VAR_esxi_password%"
                     '''
                 }
             }
@@ -57,7 +49,6 @@ pipeline {
 
         stage('Generate Ansible Inventory') {
             steps {
-                // Generate Terraform output and run the inventory script using Git Bash
                 bat '''
                     "C:\\Program Files\\Git\\bin\\sh.exe" -c "
                         set -e
@@ -82,7 +73,6 @@ pipeline {
             }
             post {
                 success {
-                    // Archive important artifacts for later inspection
                     archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json', allowEmptyArchive: false
                 }
             }
@@ -94,12 +84,10 @@ pipeline {
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
-                    // Use Git Bash for copying files and executing Ansible playbooks via SSH
                     bat '''
                         "C:\\Program Files\\Git\\bin\\sh.exe" -c "
                             set -e
                             echo '=== Copying Ansible Files to Ansible VM ==='
-                            # Use exported variables for scp/ssh commands
                             export ANSIBLE_VM_USER_TMP=%ANSIBLE_USER%
                             export ANSIBLE_VM_PASS_TMP=%ANSIBLE_PASS%
                             export GRAFANA_ADMIN_PASS_TMP=%GRAFANA_PASS%
@@ -107,7 +95,7 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST%:/tmp/ansible/
 
                             echo '=== Executing Ansible Playbooks on Ansible VM ==='
-                            ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\"
+                            ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\" 
                                 set -e
                                 echo '--- Setting up on Ansible VM ---'
                                 mkdir -p ~/ansible_playbooks
@@ -131,19 +119,16 @@ pipeline {
         success {
             echo '✅ Deployment Pipeline Completed Successfully!'
             echo "📊 Next steps:"
-            echo "   1. Access Prometheus (once VMs are up): http://<MONITORING_VM_IP>:9090"
-            echo "   2. Access Grafana (once VMs are up): http://<MONITORING_VM_IP>:3000"
-            echo "   3. Use Grafana credentials: admin / <your_grafana_password>"
+            echo "   1. Access Prometheus: http://<MONITORING_VM_IP>:9090"
+            echo "   2. Access Grafana:   http://<MONITORING_VM_IP>:3000"
+            echo "   3. Grafana login: admin / <your_grafana_password>"
         }
         failure {
             echo '❌ Deployment Pipeline Failed!'
-            echo "Please review the logs above to identify the cause of the failure."
+            echo "🔎 Please check the logs above to find the cause."
         }
         always {
-            // Clean up the workspace after the run
             cleanWs()
         }
     }
-
-    
 }
