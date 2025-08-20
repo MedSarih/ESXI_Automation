@@ -121,7 +121,7 @@ pipeline {
             echo "📈 Prometheus: http://[MONITORING_VM_IP]:9090"
         }
         failure {
-            echo '❌ Deployment Failed!!!'
+            echo '❌  Deployment Failed!!!'
         }
         always {
             cleanWs()
