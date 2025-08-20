@@ -10,16 +10,32 @@ pipeline {
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
 
-        // Executable paths on Jenkins host
-        TERRAFORM_EXE = "C:\\Program Files\\Terraform\\terraform.exe"
-        GIT_BASH_EXE = "C:\\Program Files\\Git\\bin\\bash.exe"
+        // Full Terraform path
+        TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
+
+        // Full Git Bash path
+        GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo "📥 Checking out code from SCM..."
-                checkout scm
+            }
+        }
+
+        stage('Check Terraform Files') {
+            steps {
+                script {
+                    def tfDir = "${env.WORKSPACE}\\Terraform_vSphere"
+                    def tfFiles = new File(tfDir).listFiles().findAll { it.name.endsWith('.tf') }
+                    if (!tfFiles) {
+                        error "❌ No Terraform (.tf) files found in ${tfDir}! Pipeline stopped."
+                    } else {
+                        echo "✅ Terraform files found: ${tfFiles*.name}"
+                    }
+                }
             }
         }
 
@@ -31,19 +47,19 @@ pipeline {
                         cd Terraform_vSphere
 
                         echo === Initializing Terraform ===
-                        "${TERRAFORM_EXE}" init
+                        \"${env.TERRAFORM_PATH}\" init
 
                         echo === Validating Terraform Configuration ===
-                        "${TERRAFORM_EXE}" validate
+                        \"${env.TERRAFORM_PATH}\" validate
 
                         echo === Planning Terraform Changes ===
-                        "${TERRAFORM_EXE}" plan ^
+                        \"${env.TERRAFORM_PATH}\" plan ^
                           -var="esxi_hostname=%ESXI_HOST%" ^
                           -var="esxi_username=%ESXI_USERNAME%" ^
                           -var="esxi_password=%TF_VAR_esxi_password%"
 
                         echo === Applying Terraform Changes ===
-                        "${TERRAFORM_EXE}" apply -auto-approve ^
+                        \"${env.TERRAFORM_PATH}\" apply -auto-approve ^
                           -var="esxi_hostname=%ESXI_HOST%" ^
                           -var="esxi_username=%ESXI_USERNAME%" ^
                           -var="esxi_password=%TF_VAR_esxi_password%"
@@ -55,11 +71,11 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 bat """
-                    "${GIT_BASH_EXE}" -c "
+                    \"${env.GIT_BASH_PATH}\" -c \"
                         set -e
                         echo '=== Generating Terraform Output JSON ==='
                         cd Terraform_vSphere
-                        ${TERRAFORM_EXE} output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                        ${env.TERRAFORM_PATH} output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
 
                         echo '=== Running Inventory Generation Script ==='
                         cd ../Ansible_vSphere
@@ -73,7 +89,7 @@ pipeline {
                             echo 'ERROR: inventory.ini was not generated.'
                             exit 1
                         fi
-                    "
+                    \"
                 """
             }
             post {
@@ -90,17 +106,17 @@ pipeline {
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
                     bat """
-                        "${GIT_BASH_EXE}" -c "
+                        \"${env.GIT_BASH_PATH}\" -c \"
                             set -e
                             echo '=== Copying Ansible Files to Ansible VM ==='
                             export ANSIBLE_VM_USER_TMP=%ANSIBLE_USER%
                             export ANSIBLE_VM_PASS_TMP=%ANSIBLE_PASS%
                             export GRAFANA_ADMIN_PASS_TMP=%GRAFANA_PASS%
 
-                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* \${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST%:/tmp/ansible/
+                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST%:/tmp/ansible/
 
                             echo '=== Executing Ansible Playbooks on Ansible VM ==='
-                            ssh -o StrictHostKeyChecking=no \${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\" 
+                            ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\" 
                                 set -e
                                 echo '--- Setting up on Ansible VM ---'
                                 mkdir -p ~/ansible_playbooks
@@ -113,7 +129,7 @@ pipeline {
                                 echo '--- Running Monitoring Setup Playbook ---'
                                 ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
                             \\" 
-                        "
+                        \"
                     """
                 }
             }
