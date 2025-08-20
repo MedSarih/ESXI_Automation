@@ -1,118 +1,146 @@
 pipeline {
     agent any
-    
+
     environment {
+        // ESXi Connection Details
         ESXI_HOST = "172.20.10.51"
         ESXI_USERNAME = "root"
-        ESXI_PASSWORD = credentials('ESXI_PASSWORD')
+        // ESXI_PASSWORD is loaded via credentials binding
+        // ESXI_PASSWORD = credentials('ESXI_PASSWORD') // Handled by withCredentials
+
+        // Ansible VM Connection Details
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
-        GRAFANA_ADMIN_PASSWORD = credentials('GRAFANA_ADMIN_PASSWORD')
+        // ANSIBLE_VM_CREDENTIALS (username/password) are loaded via credentials binding
+        // GRAFANA_ADMIN_PASSWORD is loaded via credentials binding
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/MedSarih/ESXI_Automation.git'
+                // Checkout the code from the configured SCM (GitHub)
+                // Jenkins job configuration specifies the repo URL and branch
+                echo "Checking out code from SCM..."
             }
         }
-        
+
         stage('Terraform Operations') {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
+                    // Use Git Bash to run Terraform commands, relying on PATH
                     bat '''
                         "C:\\Program Files\\Git\\bin\\sh.exe" -c "
+                            set -e # Exit immediately if a command exits with a non-zero status
+                            echo '=== Navigating to Terraform Directory ==='
                             cd Terraform_vSphere
+                            pwd
+
                             echo '=== Initializing Terraform ==='
-                            /c/ProgramData/chocolatey/bin/terraform init || /c/Program\\ Files/Terraform/terraform.exe init || terraform init
-                            echo '=== Validating Terraform ==='
-                            /c/ProgramData/chocolatey/bin/terraform validate || /c/Program\\ Files/Terraform/terraform.exe validate || terraform validate
-                        "
-                    '''
-                    
-                    // Separate plan and apply to avoid complex escaping
-                    bat '''
-                        "C:\\Program Files\\Git\\bin\\sh.exe" -c "
-                            cd Terraform_vSphere
-                            echo '=== Planning Terraform ==='
-                            /c/ProgramData/chocolatey/bin/terraform plan -var=\\\"esxi_hostname=$ESXI_HOST\\\" -var=\\\"esxi_username=$ESXI_USERNAME\\\" -var=\\\"esxi_password=%TF_VAR_esxi_password%\\\" -out=tfplan || /c/Program\\\\ Files/Terraform/terraform.exe plan -var=\\\"esxi_hostname=$ESXI_HOST\\\" -var=\\\"esxi_username=$ESXI_USERNAME\\\" -var=\\\"esxi_password=%TF_VAR_esxi_password%\\\" -out=tfplan || terraform plan -var=\\\"esxi_hostname=$ESXI_HOST\\\" -var=\\\"esxi_username=$ESXI_USERNAME\\\" -var=\\\"esxi_password=%TF_VAR_esxi_password%\\\" -out=tfplan
-                        "
-                    '''
-                    
-                    bat '''
-                        "C:\\Program Files\\Git\\bin\\sh.exe" -c "
-                            cd Terraform_vSphere
-                            echo '=== Applying Terraform ==='
-                            /c/ProgramData/chocolatey/bin/terraform apply -auto-approve tfplan || /c/Program\\\\ Files/Terraform/terraform.exe apply -auto-approve tfplan || terraform apply -auto-approve tfplan
+                            terraform init
+
+                            echo '=== Validating Terraform Configuration ==='
+                            terraform validate
+
+                            echo '=== Planning Terraform Changes ==='
+                            terraform plan \\
+                                -var=\\\"esxi_hostname=$ESXI_HOST\\\" \\
+                                -var=\\\"esxi_username=$ESXI_USERNAME\\\" \\
+                                -var=\\\"esxi_password=$TF_VAR_esxi_password\\\"
+
+                            echo '=== Applying Terraform Changes ==='
+                            terraform apply -auto-approve
                         "
                     '''
                 }
             }
         }
-        
-        stage('Generate Inventory') {
+
+        stage('Generate Ansible Inventory') {
             steps {
+                // Generate Terraform output and run the inventory script using Git Bash
                 bat '''
                     "C:\\Program Files\\Git\\bin\\sh.exe" -c "
+                        set -e
+                        echo '=== Generating Terraform Output JSON ==='
                         cd Terraform_vSphere
-                        echo '=== Generating Terraform Output ==='
-                        /c/ProgramData/chocolatey/bin/terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json || /c/Program\\\\ Files/Terraform/terraform.exe output -json vm_inventory > ../Ansible_vSphere/terraform-output.json || terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
-                        
+                        terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+
+                        echo '=== Running Inventory Generation Script ==='
                         cd ../Ansible_vSphere
-                        echo '=== Generating Ansible Inventory ==='
                         chmod +x generated_inventory.sh
                         ./generated_inventory.sh
-                        echo '=== Inventory Generated Successfully ==='
-                        cat inventory.ini
+
+                        echo '=== Displaying Generated Inventory ==='
+                        if [ -f inventory.ini ]; then
+                            cat inventory.ini
+                        else
+                            echo 'ERROR: inventory.ini was not generated.'
+                            exit 1
+                        fi
                     "
                 '''
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json'
+                    // Archive important artifacts for later inspection
+                    archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json', allowEmptyArchive: false
                 }
             }
         }
-        
+
         stage('Deploy Ansible Playbooks') {
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
+                    // Use Git Bash for copying files and executing Ansible playbooks via SSH
                     bat '''
                         "C:\\Program Files\\Git\\bin\\sh.exe" -c "
-                            echo '=== Copying Files to Ansible VM ==='
-                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* %ANSIBLE_USER%@%ANSIBLE_VM_HOST%:/tmp/ansible/
-                            
-                            echo '=== Executing Ansible Playbooks ==='
-                            ssh -o StrictHostKeyChecking=no %ANSIBLE_USER%@%ANSIBLE_VM_HOST% \"
+                            set -e
+                            echo '=== Copying Ansible Files to Ansible VM ==='
+                            # Use exported variables for scp/ssh commands
+                            export ANSIBLE_VM_USER_TMP=%ANSIBLE_USER%
+                            export ANSIBLE_VM_PASS_TMP=%ANSIBLE_PASS%
+                            export GRAFANA_ADMIN_PASS_TMP=%GRAFANA_PASS%
+
+                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST%:/tmp/ansible/
+
+                            echo '=== Executing Ansible Playbooks on Ansible VM ==='
+                            ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\"
+                                set -e
+                                echo '--- Setting up on Ansible VM ---'
                                 mkdir -p ~/ansible_playbooks
                                 cp -r /tmp/ansible/* ~/ansible_playbooks/
                                 cd ~/ansible_playbooks
-                                
-                                echo '=== Running Basic Setup ==='
+
+                                echo '--- Running Basic Setup Playbook ---'
                                 ansible-playbook -i inventory.ini playbook-setup.yml
-                                
-                                echo '=== Running Monitoring Setup ==='
-                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=%GRAFANA_PASS%
-                            \"
+
+                                echo '--- Running Monitoring Setup Playbook ---'
+                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
+                            \\"
                         "
                     '''
                 }
             }
         }
     }
-    
+
     post {
         success {
-            echo '✅ Deployment Complete!'
-            echo "📊 Access your monitoring dashboards after they're deployed"
+            echo '✅ Deployment Pipeline Completed Successfully!'
+            echo "📊 Next steps:"
+            echo "   1. Access Prometheus (once VMs are up): http://<MONITORING_VM_IP>:9090"
+            echo "   2. Access Grafana (once VMs are up): http://<MONITORING_VM_IP>:3000"
+            echo "   3. Use Grafana credentials: admin / <your_grafana_password>"
         }
         failure {
-            echo '❌ Deployment Failed! Check the logs above for details'
+            echo '❌ Deployment Pipeline Failed!'
+            echo "Please review the logs above to identify the cause of the failure."
         }
         always {
+            // Clean up the workspace after the run
             cleanWs()
         }
     }
