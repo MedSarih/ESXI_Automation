@@ -34,9 +34,9 @@ pipeline {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     sh '''
                         cd Terraform_vSphere
-                        terraform plan -var="esxi_hostname=$ESXI_HOST" \
-                                      -var="esxi_username=$ESXI_USERNAME" \
-                                      -var="esxi_password=$TF_VAR_esxi_password" \
+                        terraform plan -var="esxi_hostname=$ESXI_HOST" \\
+                                      -var="esxi_username=$ESXI_USERNAME" \\
+                                      -var="esxi_password=$TF_VAR_esxi_password" \\
                                       -out=tfplan
                     '''
                 }
@@ -82,7 +82,15 @@ pipeline {
                     sh '''
                         # Install sshpass if not present
                         if ! command -v sshpass &> /dev/null; then
-                            sudo apt-get update && sudo apt-get install -y sshpass
+                            echo "Installing sshpass..."
+                            # Try different installation methods
+                            if command -v apt-get &> /dev/null; then
+                                sudo apt-get update && sudo apt-get install -y sshpass
+                            elif command -v yum &> /dev/null; then
+                                sudo yum install -y sshpass
+                            elif command -v brew &> /dev/null; then
+                                brew install hudochenkov/sshpass/sshpass
+                            fi
                         fi
                         
                         # Copy files to Ansible VM
@@ -113,7 +121,7 @@ pipeline {
             echo "📈 Prometheus: http://[MONITORING_VM_IP]:9090"
         }
         failure {
-            echo '❌Deployment Failed!!!'
+            echo '❌ Deployment Failed!!!'
         }
         always {
             cleanWs()
