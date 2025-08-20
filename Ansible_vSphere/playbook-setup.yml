@@ -1,107 +1,68 @@
 ---
 # Main VM Configuration Playbook
-# This playbook runs on ALL VMs to set up basic security and configuration
 - name: Main VM Configuration (Security & Basic Setup)
-  hosts: all                    # Run on all VMs in inventory
-  become: true                  # Execute tasks with sudo privileges
+  hosts: all
+  become: true
 
-  # Define variables for easy configuration and reuse
   vars:
-    new_user: devopsadmin                           # Non-root admin user to create
-    new_user_password: "{{ 'SuperSecurePass123' | password_hash('sha512') }}"  # Securely hashed password
-    ssh_public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"  # Your SSH public key for authentication
-    timezone: "Africa/Casablanca"                   # Server timezone setting
+    new_user: devopsadmin
+    new_user_password: "{{ 'SecureAdminPassword123!' | password_hash('sha512') }}"
+    timezone: "Africa/Casablanca"
 
-  # List of tasks to execute on all VMs
   tasks:
     ###########################################################################
     # SYSTEM UPDATES & MAINTENANCE
     ###########################################################################
     
-    # Keep the system up-to-date with latest security patches
-    - name: Update package cache and upgrade installed packages
+    - name: Update package cache and upgrade packages
       apt:
-        update_cache: yes        # Equivalent to 'apt-get update'
-        upgrade: dist            # Full distribution upgrade
+        update_cache: yes
+        upgrade: dist
 
     ###########################################################################
     # TIMEZONE CONFIGURATION
     ###########################################################################
     
-    # Set consistent timezone across all VMs for proper logging
     - name: Set system timezone
       timezone:
-        name: "{{ timezone }}"   # Configure server timezone
+        name: "{{ timezone }}"
 
     ###########################################################################
     # ESSENTIAL TOOLS INSTALLATION
     ###########################################################################
     
-    # Install commonly used tools for system administration
     - name: Install essential packages
       apt:
         name:
-          - vim                  # Text editor for configuration files
-          - curl                 # Command-line HTTP client for testing
-          - git                  # Version control for deployments
-          - htop                 # Interactive system monitoring tool
-        state: present           # Ensure packages are installed
+          - vim
+          - curl
+          - git
+          - htop
+          - ufw
+        state: present
 
     ###########################################################################
-    # USER MANAGEMENT & SECURITY
+    # USER MANAGEMENT
     ###########################################################################
     
-    # Create a dedicated admin user instead of using root
     - name: Create sudo user "{{ new_user }}"
       user:
-        name: "{{ new_user }}"          # Username to create
-        password: "{{ new_user_password }}"  # Securely hashed password
-        groups: sudo                   # Add to sudo group for admin privileges
-        shell: /bin/bash               # Default shell
-        create_home: yes               # Create home directory
-
-    # Enable secure SSH key-based authentication
-    - name: Add SSH public key for "{{ new_user }}"
-      authorized_key:
-        user: "{{ new_user }}"         # User to add key to
-        key: "{{ ssh_public_key }}"    # Public key content from local file
-
-    ###########################################################################
-    # SSH SECURITY HARDENING
-    ###########################################################################
-    
-    # Block insecure SSH access methods to prevent attacks
-    - name: Harden SSH - disable root login & password auth
-      block:
-        # Disable direct root login via SSH (major security improvement)
-        - lineinfile:
-            path: /etc/ssh/sshd_config
-            regexp: '^#?PermitRootLogin'
-            line: 'PermitRootLogin no'          # Only allow non-root users
-        
-        # Disable password authentication, only allow key-based auth
-        - lineinfile:
-            path: /etc/ssh/sshd_config
-            regexp: '^#?PasswordAuthentication'
-            line: 'PasswordAuthentication no'  # Prevent brute force attacks
-        
-        # Restart SSH service to apply security changes
-        - service:
-            name: ssh
-            state: restarted                   # Apply configuration changes
+        name: "{{ new_user }}"
+        password: "{{ new_user_password }}"
+        groups: sudo
+        shell: /bin/bash
+        create_home: yes
 
     ###########################################################################
     # FIREWALL CONFIGURATION
     ###########################################################################
     
-    # Configure basic firewall to allow only necessary access
     - name: Allow SSH through firewall
       ufw:
         rule: allow
-        name: OpenSSH                 # Predefined SSH rule for port 22
+        name: OpenSSH
 
-    # Enable firewall with secure default policy
-    - name: Enable UFW firewall with default deny policy
+    - name: Enable UFW firewall
       ufw:
         state: enabled
-        policy: deny                  # Block all incoming connections by default
+        policy: deny

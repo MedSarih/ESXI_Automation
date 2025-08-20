@@ -1,0 +1,169 @@
+---
+# Monitoring Server Setup Playbook
+- name: Setup Monitoring Server (Prometheus & Grafana)
+  hosts: monitoring_servers
+  become: true
+
+  vars:
+    prometheus_port: 9090
+    grafana_port: 3000
+    monitoring_data_dir: /opt/monitoring
+    new_user: devopsadmin
+    grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
+
+  tasks:
+    ###########################################################################
+    # SYSTEM PREPARATION
+    ###########################################################################
+    
+    - name: Update package cache
+      apt:
+        update_cache: yes
+
+    ###########################################################################
+    # DOCKER AND PYTHON SETUP
+    ###########################################################################
+    
+    - name: Install Docker and Python dependencies
+      apt:
+        name:
+          - docker.io
+          - python3-pip
+          - python3-dev
+          - python3-setuptools
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+        state: present
+
+    - name: Check if pip3 is available
+      shell: which pip3
+      register: pip3_check
+      ignore_errors: yes
+
+    - name: Install pip3 using get-pip.py if not available
+      shell: |
+        curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+        python3 get-pip.py
+      when: pip3_check.rc != 0
+      ignore_errors: yes
+
+    ###########################################################################
+    # DOCKER PYTHON MODULES INSTALLATION
+    ###########################################################################
+    
+    - name: Install Docker Python modules using shell command
+      shell: |
+        pip3 install docker docker-compose
+      ignore_errors: yes
+
+    ###########################################################################
+    # DOCKER SERVICE SETUP
+    ###########################################################################
+    
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      ignore_errors: yes
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      ignore_errors: yes
+
+    - name: Wait for Docker service to start
+      shell: sleep 5
+      when: ansible_check_mode is false
+
+    ###########################################################################
+    # PERSISTENT STORAGE SETUP
+    ###########################################################################
+    
+    - name: Create monitoring directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ new_user | default('template') }}"
+        group: "{{ new_user | default('template') }}"
+        mode: '0755'
+      loop:
+        - "{{ monitoring_data_dir }}/prometheus"
+        - "{{ monitoring_data_dir }}/grafana"
+
+    ###########################################################################
+    # PROMETHEUS DEPLOYMENT
+    ###########################################################################
+    
+    - name: Pull Prometheus Docker image using shell
+      shell: docker pull prom/prometheus:v2.45.0
+      ignore_errors: yes
+
+    - name: Create Prometheus configuration
+      copy:
+        content: |
+          global:
+            scrape_interval: 15s
+            
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+                
+            - job_name: 'node_exporter'
+              static_configs:
+                - targets: []
+        dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
+        owner: "{{ new_user | default('template') }}"
+        group: "{{ new_user | default('template') }}"
+        mode: '0644'
+
+    - name: Run Prometheus container using shell
+      shell: |
+        docker run -d \
+          --name prometheus \
+          -p {{ prometheus_port }}:9090 \
+          -v {{ monitoring_data_dir }}/prometheus:/prometheus \
+          -v {{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+          prom/prometheus:v2.45.0 \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --web.enable-lifecycle
+      ignore_errors: yes
+
+    ###########################################################################
+    # GRAFANA DEPLOYMENT
+    ###########################################################################
+    
+    - name: Pull Grafana Docker image using shell
+      shell: docker pull grafana/grafana:9.5.6
+      ignore_errors: yes
+
+    - name: Run Grafana container using shell
+      shell: |
+        docker run -d \
+          --name grafana \
+          -p {{ grafana_port }}:3000 \
+          -v {{ monitoring_data_dir }}/grafana:/var/lib/grafana \
+          -e GF_SECURITY_ADMIN_USER=admin \
+          -e GF_SECURITY_ADMIN_PASSWORD="{{ grafana_admin_password }}" \
+          -e GF_USERS_ALLOW_SIGN_UP=false \
+          grafana/grafana:9.5.6
+      ignore_errors: yes
+
+    ###########################################################################
+    # FIREWALL CONFIGURATION
+    ###########################################################################
+    
+    - name: Allow Prometheus and Grafana through firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "{{ prometheus_port }}"
+        - "{{ grafana_port }}"
+      ignore_errors: yes
