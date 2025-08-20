@@ -17,38 +17,23 @@ pipeline {
             }
         }
         
-        stage('Terraform Init') {
-            steps {
-                sh 'cd Terraform_vSphere && terraform init'
-            }
-        }
-        
-        stage('Terraform Validate') {
-            steps {
-                sh 'cd Terraform_vSphere && terraform validate'
-            }
-        }
-        
-        stage('Terraform Plan') {
+        stage('Terraform Operations') {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
-                    sh '''
-                        cd Terraform_vSphere
-                        terraform plan -var="esxi_hostname=$ESXI_HOST" \\
-                                      -var="esxi_username=$ESXI_USERNAME" \\
-                                      -var="esxi_password=$TF_VAR_esxi_password" \\
-                                      -out=tfplan
-                    '''
-                }
-            }
-        }
-        
-        stage('Terraform Apply') {
-            steps {
-                withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
-                    sh '''
-                        cd Terraform_vSphere
-                        terraform apply -auto-approve tfplan
+                    bat '''
+                        "C:\\Program Files\\Git\\bin\\sh.exe" -c "
+                            cd Terraform_vSphere
+                            echo '=== Initializing Terraform ==='
+                            terraform init
+                            echo '=== Validating Terraform ==='
+                            terraform validate
+                            echo '=== Planning Terraform ==='
+                            terraform plan -var=\\"esxi_hostname=$ESXI_HOST\\" \\
+                                          -var=\\"esxi_username=$ESXI_USERNAME\\" \\
+                                          -var=\\"esxi_password=%TF_VAR_esxi_password%\\"
+                            echo '=== Applying Terraform ==='
+                            terraform apply -auto-approve
+                        "
                     '''
                 }
             }
@@ -56,19 +41,24 @@ pipeline {
         
         stage('Generate Inventory') {
             steps {
-                sh '''
-                    cd Terraform_vSphere
-                    terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
-                    
-                    cd ../Ansible_vSphere
-                    chmod +x generated_inventory.sh
-                    ./generated_inventory.sh
+                bat '''
+                    "C:\\Program Files\\Git\\bin\\sh.exe" -c "
+                        cd Terraform_vSphere
+                        echo '=== Generating Terraform Output ==='
+                        terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                        
+                        cd ../Ansible_vSphere
+                        echo '=== Generating Ansible Inventory ==='
+                        chmod +x generated_inventory.sh
+                        ./generated_inventory.sh
+                        echo '=== Inventory Generated Successfully ==='
+                        cat inventory.ini
+                    "
                 '''
             }
             post {
                 success {
                     archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json'
-                    sh 'echo "=== GENERATED INVENTORY ===" && cat Ansible_vSphere/inventory.ini'
                 }
             }
         }
@@ -79,34 +69,23 @@ pipeline {
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
-                    sh '''
-                        # Install sshpass if not present
-                        if ! command -v sshpass &> /dev/null; then
-                            echo "Installing sshpass..."
-                            # Try different installation methods
-                            if command -v apt-get &> /dev/null; then
-                                sudo apt-get update && sudo apt-get install -y sshpass
-                            elif command -v yum &> /dev/null; then
-                                sudo yum install -y sshpass
-                            elif command -v brew &> /dev/null; then
-                                brew install hudochenkov/sshpass/sshpass
-                            fi
-                        fi
-                        
-                        # Copy files to Ansible VM
-                        sshpass -p "$ANSIBLE_PASS" scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* $ANSIBLE_USER@$ANSIBLE_VM_HOST:/tmp/ansible/
-                        
-                        # Execute Ansible playbooks
-                        sshpass -p "$ANSIBLE_PASS" ssh -o StrictHostKeyChecking=no $ANSIBLE_USER@$ANSIBLE_VM_HOST "
-                            mkdir -p ~/ansible_playbooks
-                            cp -r /tmp/ansible/* ~/ansible_playbooks/
-                            cd ~/ansible_playbooks
+                    bat '''
+                        "C:\\Program Files\\Git\\bin\\sh.exe" -c "
+                            echo '=== Copying Files to Ansible VM ==='
+                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* %ANSIBLE_USER%@%ANSIBLE_VM_HOST%:/tmp/ansible/
                             
-                            echo '=== Running Basic Setup ==='
-                            ansible-playbook -i inventory.ini playbook-setup.yml
-                            
-                            echo '=== Running Monitoring Setup ==='
-                            ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=$GRAFANA_PASS
+                            echo '=== Executing Ansible Playbooks ==='
+                            ssh -o StrictHostKeyChecking=no %ANSIBLE_USER%@%ANSIBLE_VM_HOST% \"
+                                mkdir -p ~/ansible_playbooks
+                                cp -r /tmp/ansible/* ~/ansible_playbooks/
+                                cd ~/ansible_playbooks
+                                
+                                echo '=== Running Basic Setup ==='
+                                ansible-playbook -i inventory.ini playbook-setup.yml
+                                
+                                echo '=== Running Monitoring Setup ==='
+                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=%GRAFANA_PASS%
+                            \"
                         "
                     '''
                 }
@@ -117,15 +96,13 @@ pipeline {
     post {
         success {
             echo '✅ Deployment Complete!'
-            echo "📊 Monitoring Dashboard: http://[MONITORING_VM_IP]:3000"
-            echo "📈 Prometheus: http://[MONITORING_VM_IP]:9090"
+            echo "📊 Access your monitoring dashboards after they're deployed"
         }
         failure {
-            echo '❌  Deployment Failed!!!'
+            echo '❌ Deployment Failed! Check the logs above for details'
         }
         always {
             cleanWs()
         }
     }
-    
 }
