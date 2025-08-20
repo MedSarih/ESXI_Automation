@@ -24,15 +24,15 @@ pipeline {
                         "C:\\Program Files\\Git\\bin\\sh.exe" -c "
                             cd Terraform_vSphere
                             echo '=== Initializing Terraform ==='
-                            terraform init
+                            '/c/Program Files/Terraform/terraform.exe' init
                             echo '=== Validating Terraform ==='
-                            terraform validate
+                            '/c/Program Files/Terraform/terraform.exe' validate
                             echo '=== Planning Terraform ==='
-                            terraform plan -var=\\"esxi_hostname=$ESXI_HOST\\" \\
-                                          -var=\\"esxi_username=$ESXI_USERNAME\\" \\
-                                          -var=\\"esxi_password=%TF_VAR_esxi_password%\\"
+                            '/c/Program Files/Terraform/terraform.exe' plan -var=\\\"esxi_hostname=$ESXI_HOST\\\" \\
+                                          -var=\\\"esxi_username=$ESXI_USERNAME\\\" \\
+                                          -var=\\\"esxi_password=%TF_VAR_esxi_password%\\\"
                             echo '=== Applying Terraform ==='
-                            terraform apply -auto-approve
+                            '/c/Program Files/Terraform/terraform.exe' apply -auto-approve
                         "
                     '''
                 }
@@ -45,7 +45,7 @@ pipeline {
                     "C:\\Program Files\\Git\\bin\\sh.exe" -c "
                         cd Terraform_vSphere
                         echo '=== Generating Terraform Output ==='
-                        terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                        '/c/Program Files/Terraform/terraform.exe' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
                         
                         cd ../Ansible_vSphere
                         echo '=== Generating Ansible Inventory ==='
