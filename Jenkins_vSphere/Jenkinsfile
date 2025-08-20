@@ -1,0 +1,122 @@
+pipeline {
+    agent any
+    
+    environment {
+        ESXI_HOST = "172.20.10.51"
+        ESXI_USERNAME = "root"
+        ESXI_PASSWORD = credentials('ESXI_PASSWORD')
+        ANSIBLE_VM_HOST = "172.20.10.135"
+        ANSIBLE_VM_USER = "template"
+        GRAFANA_ADMIN_PASSWORD = credentials('GRAFANA_ADMIN_PASSWORD')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/MedSarih/ESXI_Automation.git'
+            }
+        }
+        
+        stage('Terraform Init') {
+            steps {
+                sh 'cd Terraform_vSphere && terraform init'
+            }
+        }
+        
+        stage('Terraform Validate') {
+            steps {
+                sh 'cd Terraform_vSphere && terraform validate'
+            }
+        }
+        
+        stage('Terraform Plan') {
+            steps {
+                withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
+                    sh '''
+                        cd Terraform_vSphere
+                        terraform plan -var="esxi_hostname=$ESXI_HOST" \
+                                      -var="esxi_username=$ESXI_USERNAME" \
+                                      -var="esxi_password=$TF_VAR_esxi_password" \
+                                      -out=tfplan
+                    '''
+                }
+            }
+        }
+        
+        stage('Terraform Apply') {
+            steps {
+                withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
+                    sh '''
+                        cd Terraform_vSphere
+                        terraform apply -auto-approve tfplan
+                    '''
+                }
+            }
+        }
+        
+        stage('Generate Inventory') {
+            steps {
+                sh '''
+                    cd Terraform_vSphere
+                    terraform output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                    
+                    cd ../Ansible_vSphere
+                    chmod +x generated_inventory.sh
+                    ./generated_inventory.sh
+                '''
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json'
+                    sh 'echo "=== GENERATED INVENTORY ===" && cat Ansible_vSphere/inventory.ini'
+                }
+            }
+        }
+        
+        stage('Deploy Ansible Playbooks') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
+                    string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
+                ]) {
+                    sh '''
+                        # Install sshpass if not present
+                        if ! command -v sshpass &> /dev/null; then
+                            sudo apt-get update && sudo apt-get install -y sshpass
+                        fi
+                        
+                        # Copy files to Ansible VM
+                        sshpass -p "$ANSIBLE_PASS" scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* $ANSIBLE_USER@$ANSIBLE_VM_HOST:/tmp/ansible/
+                        
+                        # Execute Ansible playbooks
+                        sshpass -p "$ANSIBLE_PASS" ssh -o StrictHostKeyChecking=no $ANSIBLE_USER@$ANSIBLE_VM_HOST "
+                            mkdir -p ~/ansible_playbooks
+                            cp -r /tmp/ansible/* ~/ansible_playbooks/
+                            cd ~/ansible_playbooks
+                            
+                            echo '=== Running Basic Setup ==='
+                            ansible-playbook -i inventory.ini playbook-setup.yml
+                            
+                            echo '=== Running Monitoring Setup ==='
+                            ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=$GRAFANA_PASS
+                        "
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Deployment Complete!'
+            echo "📊 Monitoring Dashboard: http://[MONITORING_VM_IP]:3000"
+            echo "📈 Prometheus: http://[MONITORING_VM_IP]:9090"
+        }
+        failure {
+            echo '❌ Deployment Failed!'
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
