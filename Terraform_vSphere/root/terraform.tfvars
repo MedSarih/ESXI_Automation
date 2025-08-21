@@ -8,6 +8,7 @@ clone_source_vm = "templateVM"
 nic_type        = "vmxnet3"
 
 
+
 vm_configs = {
   app-terraform = {
     cpu           = 4
