@@ -10,8 +10,8 @@ pipeline {
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
 
-        // Append tool directories to PATH safely
-        PATH+TOOLS = "/usr/local/bin"
+        // Ensure tools are in PATH
+        PATH = "/usr/local/bin:${env.PATH}"
     }
 
     options {
@@ -28,12 +28,18 @@ pipeline {
             }
         }
 
-        stage('Test Tools') {
+        stage('Test OVF Tool') {
             steps {
                 sh """
                     echo "=== Testing OVF Tool ==="
                     ovftool --version
+                """
+            }
+        }
 
+        stage('Test Terraform') {
+            steps {
+                sh """
                     echo "=== Testing Terraform ==="
                     terraform version
                 """
