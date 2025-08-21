@@ -12,9 +12,6 @@ pipeline {
 
         // Full Terraform path
         TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
-
-        // Full Git Bash path
-        GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
     }
 
     options {
@@ -31,12 +28,38 @@ pipeline {
             }
         }
 
+        stage('Debug Directory Structure') {
+            steps {
+                bat """
+                    echo === Current Directory ===
+                    cd
+                    echo === Listing Root Directory ===
+                    dir
+                    echo === Checking Terraform_vSphere Directory ===
+                    if exist Terraform_vSphere (
+                        echo Terraform_vSphere directory exists
+                        echo === Contents of Terraform_vSphere ===
+                        dir Terraform_vSphere
+                        echo === Looking for root directory ===
+                        dir Terraform_vSphere\\root
+                        echo === Looking for modules/vm directory ===
+                        dir Terraform_vSphere\\modules\\vm
+                        echo === Looking for .tf files in root ===
+                        dir Terraform_vSphere\\root\\*.tf
+                    ) else (
+                        echo ERROR: Terraform_vSphere directory not found!
+                        exit /b 1
+                    )
+                """
+            }
+        }
+
         stage('Terraform Operations') {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     bat """
-                        echo === Navigating to Terraform Directory ===
-                        cd Terraform_vSphere
+                        echo === Navigating to Terraform Root Directory ===
+                        cd Terraform_vSphere\\root
 
                         echo === Initializing Terraform ===
                         "${env.TERRAFORM_PATH}" init
@@ -63,10 +86,10 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 bat """
-                    "${env.GIT_BASH_PATH}" -c "
+                    \"C:\\Program Files\\Git\\bin\\bash.exe\" -c "
                         set -e
                         echo '=== Generating Terraform Output JSON ==='
-                        cd Terraform_vSphere
+                        cd Terraform_vSphere\\root
                         '${env.TERRAFORM_PATH}' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
 
                         echo '=== Running Inventory Generation Script ==='
@@ -98,7 +121,7 @@ pipeline {
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
                     bat """
-                        "${env.GIT_BASH_PATH}" -c "
+                        \"C:\\Program Files\\Git\\bin\\bash.exe\" -c "
                             set -e
                             echo '=== Copying Ansible Files to Ansible VM ==='
                             export ANSIBLE_VM_USER_TMP='%ANSIBLE_USER%'
@@ -108,7 +131,7 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* %ANSIBLE_VM_USER_TMP%@%ANSIBLE_VM_HOST%:/tmp/ansible/
 
                             echo '=== Executing Ansible Playbooks on Ansible VM ==='
-                            ssh -o StrictHostKeyChecking=no %ANSIBLE_VM_USER_TMP%@%ANSIBLE_VM_HOST% \\"
+                            ssh -o StrictHostKeyChecking=no %ANSIBLE_VM_USER_TMP%@%ANSIBLE_VM_HOST% \"
                                 set -e
                                 echo '--- Setting up on Ansible VM ---'
                                 mkdir -p ~/ansible_playbooks
@@ -119,8 +142,8 @@ pipeline {
                                 ansible-playbook -i inventory.ini playbook-setup.yml
 
                                 echo '--- Running Monitoring Setup Playbook ---'
-                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
-                            \\"
+                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\$GRAFANA_ADMIN_PASS_TMP
+                            \"
                         "
                     """
                 }
