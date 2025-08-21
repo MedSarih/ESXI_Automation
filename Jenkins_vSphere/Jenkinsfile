@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // ESXi Connection Details
-        ESXI_HOST = "172.20.10.51"
+        ESXI_HOST     = "172.20.10.51"
         ESXI_USERNAME = "root"
 
         // Ansible VM Connection Details
@@ -15,6 +15,9 @@ pipeline {
 
         // OVF Tool path
         OVFTOOL_PATH = "C:\\newovf\\VMwareOVFTool\\ovftool.exe"
+
+        // Force PATH so Jenkins can see cmd.exe + ovftool
+        PATH = "C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\newovf\\VMwareOVFTool;C:\\Program Files\\Git\\bin;C:\\Program Files\\Git\\usr\\bin;C:\\Program Files\\Git\\mingw64\\bin;C:\\Program Files\\Git\\cmd;%PATH%"
     }
 
     options {
@@ -31,11 +34,15 @@ pipeline {
             }
         }
 
-        stage('Test Tools') {
+        stage('Test Environment') {
             steps {
                 bat """
+                    echo === Testing cmd.exe ===
+                    cmd.exe /c "echo CMD is accessible"
+
                     echo === Testing OVF Tool ===
                     "${OVFTOOL_PATH}" --version
+
                     echo === Testing Terraform ===
                     "${TERRAFORM_PATH}" version
                 """
@@ -56,10 +63,18 @@ pipeline {
                         "${TERRAFORM_PATH}" validate
 
                         echo === Planning Terraform Changes ===
-                        "${TERRAFORM_PATH}" plan -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
+                        "${TERRAFORM_PATH}" plan ^
+                          -var="esxi_hostname=%ESXI_HOST%" ^
+                          -var="esxi_username=%ESXI_USERNAME%" ^
+                          -var="esxi_password=%TF_VAR_esxi_password%" ^
+                          -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
 
                         echo === Applying Terraform Changes ===
-                        "${TERRAFORM_PATH}" apply -auto-approve -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
+                        "${TERRAFORM_PATH}" apply -auto-approve ^
+                          -var="esxi_hostname=%ESXI_HOST%" ^
+                          -var="esxi_username=%ESXI_USERNAME%" ^
+                          -var="esxi_password=%TF_VAR_esxi_password%" ^
+                          -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
                     """
                 }
             }
