@@ -142,6 +142,7 @@ pipeline {
             echo "🔎 Check the logs above for errors."
         }
         always {
+            
             cleanWs()
         }
     }
