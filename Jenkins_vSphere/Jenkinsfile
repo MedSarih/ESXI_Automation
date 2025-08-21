@@ -12,7 +12,9 @@ pipeline {
 
         // Full Terraform path
         TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
-        OVFTOOL_PATH  = "C:\\Program Files\\VMware\\OVF Tool\\ovftool.exe"
+
+        // OVF Tool path
+        OVFTOOL_PATH = "C:\\Program Files\\VMware\\OVF Tool\\ovftool.exe"
     }
 
     options {
@@ -37,9 +39,9 @@ pipeline {
                     echo === Testing cmd.exe ===
                     cmd.exe /c "echo cmd.exe is accessible"
                     echo === Testing OVF Tool ===
-                    "%OVFTOOL_PATH%" --version
+                    "${OVFTOOL_PATH}" --version
                     echo === Testing Terraform ===
-                    "${env.TERRAFORM_PATH}" version
+                    "${TERRAFORM_PATH}" version
                 """
             }
         }
@@ -55,22 +57,16 @@ pipeline {
                         cd Terraform_vSphere\\root
 
                         echo === Initializing Terraform ===
-                        "${env.TERRAFORM_PATH}" init
+                        "${TERRAFORM_PATH}" init
 
                         echo === Validating Terraform Configuration ===
-                        "${env.TERRAFORM_PATH}" validate
+                        "${TERRAFORM_PATH}" validate
 
                         echo === Planning Terraform Changes ===
-                        "${env.TERRAFORM_PATH}" plan ^
-                          -var="esxi_hostname=%ESXI_HOST%" ^
-                          -var="esxi_username=%ESXI_USERNAME%" ^
-                          -var="esxi_password=%TF_VAR_esxi_password%"
+                        "${TERRAFORM_PATH}" plan -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
 
                         echo === Applying Terraform Changes ===
-                        "${env.TERRAFORM_PATH}" apply -auto-approve ^
-                          -var="esxi_hostname=%ESXI_HOST%" ^
-                          -var="esxi_username=%ESXI_USERNAME%" ^
-                          -var="esxi_password=%TF_VAR_esxi_password%"
+                        "${TERRAFORM_PATH}" apply -auto-approve -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
                     """
                 }
             }
@@ -83,7 +79,7 @@ pipeline {
                         set -e
                         echo '=== Generating Terraform Output JSON ==='
                         cd Terraform_vSphere/root
-                        '${env.TERRAFORM_PATH}' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                        '${TERRAFORM_PATH}' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
 
                         echo '=== Running Inventory Generation Script ==='
                         cd ../Ansible_vSphere
@@ -117,21 +113,25 @@ pipeline {
                         "C:\\Program Files\\Git\\bin\\bash.exe" -c "
                             set -e
                             echo '=== Copying Ansible Files to Ansible VM ==='
-                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* %ANSIBLE_USER%@%ANSIBLE_VM_HOST%:/tmp/ansible/
+                            export ANSIBLE_VM_USER_TMP='%ANSIBLE_USER%'
+                            export ANSIBLE_VM_PASS_TMP='%ANSIBLE_PASS%'
+                            export GRAFANA_ADMIN_PASS_TMP='%GRAFANA_PASS%'
+
+                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* %ANSIBLE_VM_USER_TMP%@%ANSIBLE_VM_HOST%:/tmp/ansible/
 
                             echo '=== Executing Ansible Playbooks on Ansible VM ==='
-                            ssh -o StrictHostKeyChecking=no %ANSIBLE_USER%@%ANSIBLE_VM_HOST% \\
-                            \"
+                            ssh -o StrictHostKeyChecking=no %ANSIBLE_VM_USER_TMP%@%ANSIBLE_VM_HOST% \"
                                 set -e
+                                echo '--- Setting up on Ansible VM ---'
                                 mkdir -p ~/ansible_playbooks
                                 cp -r /tmp/ansible/* ~/ansible_playbooks/
                                 cd ~/ansible_playbooks
-                                
+
                                 echo '--- Running Basic Setup Playbook ---'
                                 ansible-playbook -i inventory.ini playbook-setup.yml
-                                
+
                                 echo '--- Running Monitoring Setup Playbook ---'
-                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_PASS
+                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
                             \"
                         "
                     """
@@ -150,7 +150,10 @@ pipeline {
         }
         failure {
             echo '❌ Deployment Pipeline Failed!'
-            echo "🔎 Please check the logs above to find the cause."
+            echo "🔎 Check the logs above for errors."
+        }
+        always {
+            cleanWs()
         }
     }
 }
