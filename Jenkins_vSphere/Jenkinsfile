@@ -14,9 +14,6 @@ pipeline {
         TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
         OVFTOOL_PATH   = "C:\\newovf\\VMwareOVFTool\\ovftool.exe"
         GITBASH_PATH   = "C:\\Program Files\\Git\\bin\\bash.exe"
-
-        // Prepend PATH so Jenkins can find cmd.exe and ovftool.exe
-        PATH = "C:\\Windows\\System32;C:\\Program Files\\VMware\\VMware OVF Tool;C:\\Program Files\\Git\\cmd;${env.PATH}"
     }
 
     options {
@@ -65,10 +62,10 @@ pipeline {
                         "${TERRAFORM_PATH}" validate
 
                         echo === Planning Terraform Changes ===
-                        "${TERRAFORM_PATH}" plan -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
+                        "${TERRAFORM_PATH}" plan -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=templateVM"
 
                         echo === Applying Terraform Changes ===
-                        "${TERRAFORM_PATH}" apply -auto-approve -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
+                        "${TERRAFORM_PATH}" apply -auto-approve -var="esxi_hostname=%ESXI_HOST%" -var="esxi_username=%ESXI_USERNAME%" -var="esxi_password=%TF_VAR_esxi_password%" -var="clone_source_vm=templateVM"
                     """
                 }
             }
