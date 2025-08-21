@@ -10,9 +10,9 @@ pipeline {
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
 
-        // Executable paths
+        // Paths
         TERRAFORM_PATH = "/usr/local/bin/terraform"
-        OVFTOOL_PATH   = "/usr/local/bin/ovftool"
+        OVFTOOL_PATH   = "/usr/local/bin/ovftool/ovftool"
     }
 
     options {
@@ -51,6 +51,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     sh """
+                        set -e
                         echo "=== Navigating to Terraform Root Directory ==="
                         cd ${WORKSPACE}/Terraform_vSphere/root
 
@@ -74,20 +75,20 @@ pipeline {
             steps {
                 sh """
                     set -e
-                    echo '=== Generating Terraform Output JSON ==='
+                    echo "=== Generating Terraform Output JSON ==="
                     cd ${WORKSPACE}/Terraform_vSphere/root
                     ${TERRAFORM_PATH} output -json vm_inventory > ${WORKSPACE}/Ansible_vSphere/terraform-output.json
 
-                    echo '=== Running Inventory Generation Script ==='
+                    echo "=== Running Inventory Generation Script ==="
                     cd ${WORKSPACE}/Ansible_vSphere
                     chmod +x generated_inventory.sh
                     ./generated_inventory.sh
 
-                    echo '=== Displaying Generated Inventory ==='
+                    echo "=== Displaying Generated Inventory ==="
                     if [ -f inventory.ini ]; then
                         cat inventory.ini
                     else
-                        echo 'ERROR: inventory.ini was not generated.'
+                        echo "ERROR: inventory.ini was not generated."
                         exit 1
                     fi
                 """
@@ -107,12 +108,13 @@ pipeline {
                 ]) {
                     sh """
                         set -e
-                        echo '=== Copying Ansible Files to Ansible VM ==='
+                        echo "=== Copying Ansible Files to Ansible VM ==="
                         scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/Ansible_vSphere/* ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST}:/tmp/ansible/
 
-                        echo '=== Executing Ansible Playbooks on Ansible VM ==='
+                        echo "=== Executing Ansible Playbooks on Ansible VM ==="
                         ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST} \"
                             set -e
+                            echo '--- Setting up on Ansible VM ---'
                             mkdir -p ~/ansible_playbooks
                             cp -r /tmp/ansible/* ~/ansible_playbooks/
                             cd ~/ansible_playbooks
@@ -142,7 +144,6 @@ pipeline {
             echo "🔎 Check the logs above for errors."
         }
         always {
-            
             cleanWs()
         }
     }
