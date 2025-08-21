@@ -3,12 +3,10 @@ pipeline {
 
     environment {
         // --- Path Definitions (Relative to Git Repo Root / Jenkins Workspace) ---
-        // No need for PROJECT_DIR=/mnt/hgfs when using Git clone for Terraform steps
         TERRAFORM_DIR     = "Terraform_vSphere/root" // Relative path from workspace root
         ANSIBLE_DIR       = "Ansible_vSphere"        // Relative path from workspace root
-        INVENTORY_FILE    = "${ANSIBLE_DIR}/inventory.ini"
-        INVENTORY_SCRIPT  = "${ANSIBLE_DIR}/generated_inventory.sh"
-        TF_OUTPUT_JSON    = "${ANSIBLE_DIR}/terraform-output.json" // Output file for inventory script
+        // Use WORKSPACE variable to construct full paths for scripts/files
+        // INVENTORY_FILE, INVENTORY_SCRIPT, TF_OUTPUT_JSON defined dynamically in stages
 
         // --- Credentials from Jenkins (Secure) ---
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
@@ -30,7 +28,7 @@ pipeline {
                 // This clones the repository based on Jenkins job SCM settings
                 checkout scm
                 // Optional: Debug - List workspace contents to verify checkout
-                // sh 'ls -la'
+                // sh 'echo "Workspace contents:" && ls -la'
             }
         }
 
@@ -47,6 +45,10 @@ pipeline {
                     which jq || { echo "ERROR: jq not found in PATH"; exit 1; }
                     jq --version
 
+                    # Check ovftool specifically, as it had issues before
+                    which ovftool || { echo "ERROR: ovftool not found in PATH"; exit 1; }
+                    ovftool --version
+
                     echo "=== Checking Directories and Files ==="
                     if [ ! -d "${TERRAFORM_DIR}" ]; then
                         echo "ERROR: Terraform directory ${TERRAFORM_DIR} not found!"
@@ -60,8 +62,8 @@ pipeline {
                         exit 1
                     fi
 
-                    if [ ! -f "${INVENTORY_SCRIPT}" ]; then
-                        echo "ERROR: Inventory script ${INVENTORY_SCRIPT} not found!"
+                    if [ ! -f "${ANSIBLE_DIR}/generated_inventory.sh" ]; then
+                        echo "ERROR: Inventory script ${ANSIBLE_DIR}/generated_inventory.sh not found!"
                         ls -la ${ANSIBLE_DIR} || true
                         exit 1
                     fi
@@ -103,29 +105,30 @@ pipeline {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     // Export JSON output to the Ansible directory for the inventory script
-                    sh "terraform output -json > \${WORKSPACE}/${TF_OUTPUT_JSON}"
+                    // Use WORKSPACE env var to ensure correct absolute path
+                    sh "terraform output -json > \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
                     // Debug: Show the output file was created
-                    sh "ls -l \${WORKSPACE}/${TF_OUTPUT_JSON}"
+                    sh "ls -l \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
                 }
             }
         }
 
         stage('Generate Ansible Inventory') {
             steps {
-                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for script execution context
-                    sh '''
-                        chmod +x "${INVENTORY_SCRIPT}"
-                        "${INVENTORY_SCRIPT}"
-                    '''
-                    // Debug: Display the generated inventory
-                    sh 'cat inventory.ini'
-                }
+                 // Ensure we are in the right directory context or use absolute path
+                 // Using absolute path based on WORKSPACE for clarity and correctness
+                 sh '''
+                     chmod +x "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
+                     "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
+                 '''
+                 // Debug: Display the generated inventory
+                 sh 'cat ${WORKSPACE}/${ANSIBLE_DIR}/inventory.ini'
             }
         }
 
         stage('Run Ansible: Base Setup') {
             steps {
-                dir("${ANSIBLE_DIR}") {
+                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for relative path 'inventory.ini'
                     // Use credentials helper to pass username/password securely
                     withCredentials([usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')]) {
                         sh '''
@@ -143,7 +146,7 @@ pipeline {
 
         stage('Run Ansible: Monitoring Stack') {
             steps {
-                dir("${ANSIBLE_DIR}") {
+                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for relative path 'inventory.ini'
                     // Use credentials helper for VM access and Grafana password
                     withCredentials([
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
@@ -181,6 +184,4 @@ pipeline {
             cleanWs()
         }
     }
-
-    
 }
