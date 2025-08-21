@@ -45,7 +45,7 @@ pipeline {
 
         stage('Terraform Operations') {
             steps {
-                withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
+                withCredentials([string(credentialsId: 'ESXI_PASSWD', variable: 'TF_VAR_esxi_password')]) {
                     bat """
                         echo === Setting up Environment ===
                         set PATH=%PATH%;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Program Files\\VMware\\OVF Tool
