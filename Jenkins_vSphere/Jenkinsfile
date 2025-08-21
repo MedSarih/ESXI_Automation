@@ -17,11 +17,17 @@ pipeline {
         GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe"
     }
 
+    options {
+        skipDefaultCheckout true
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
+                cleanWs()
                 echo "📥 Checking out code from SCM..."
+                checkout scm
             }
         }
 
@@ -70,26 +76,24 @@ pipeline {
 
         stage('Generate Ansible Inventory') {
             steps {
-                bat """
-                    \"${env.GIT_BASH_PATH}\" -c \"
-                        set -e
-                        echo '=== Generating Terraform Output JSON ==='
-                        cd Terraform_vSphere
-                        ${env.TERRAFORM_PATH} output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
+                sh """
+                    set -e
+                    echo '=== Generating Terraform Output JSON ==='
+                    cd Terraform_vSphere
+                    '${env.TERRAFORM_PATH}' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
 
-                        echo '=== Running Inventory Generation Script ==='
-                        cd ../Ansible_vSphere
-                        chmod +x generated_inventory.sh
-                        ./generated_inventory.sh
+                    echo '=== Running Inventory Generation Script ==='
+                    cd ../Ansible_vSphere
+                    chmod +x generated_inventory.sh
+                    ./generated_inventory.sh
 
-                        echo '=== Displaying Generated Inventory ==='
-                        if [ -f inventory.ini ]; then
-                            cat inventory.ini
-                        else
-                            echo 'ERROR: inventory.ini was not generated.'
-                            exit 1
-                        fi
-                    \"
+                    echo '=== Displaying Generated Inventory ==='
+                    if [ -f inventory.ini ]; then
+                        cat inventory.ini
+                    else
+                        echo 'ERROR: inventory.ini was not generated.'
+                        exit 1
+                    fi
                 """
             }
             post {
@@ -105,31 +109,25 @@ pipeline {
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
-                    bat """
-                        \"${env.GIT_BASH_PATH}\" -c \"
+                    sh """
+                        set -e
+                        echo '=== Copying Ansible Files to Ansible VM ==='
+                        scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* ${ANSIBLE_USER}@${ANSIBLE_VM_HOST}:/tmp/ansible/
+
+                        echo '=== Executing Ansible Playbooks on Ansible VM ==='
+                        ssh -o StrictHostKeyChecking=no ${ANSIBLE_USER}@${ANSIBLE_VM_HOST} \\"
                             set -e
-                            echo '=== Copying Ansible Files to Ansible VM ==='
-                            export ANSIBLE_VM_USER_TMP=%ANSIBLE_USER%
-                            export ANSIBLE_VM_PASS_TMP=%ANSIBLE_PASS%
-                            export GRAFANA_ADMIN_PASS_TMP=%GRAFANA_PASS%
+                            echo '--- Setting up on Ansible VM ---'
+                            mkdir -p ~/ansible_playbooks
+                            cp -r /tmp/ansible/* ~/ansible_playbooks/
+                            cd ~/ansible_playbooks
 
-                            scp -o StrictHostKeyChecking=no -r Ansible_vSphere/* ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST%:/tmp/ansible/
+                            echo '--- Running Basic Setup Playbook ---'
+                            ansible-playbook -i inventory.ini playbook-setup.yml
 
-                            echo '=== Executing Ansible Playbooks on Ansible VM ==='
-                            ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER_TMP}@%ANSIBLE_VM_HOST% \\" 
-                                set -e
-                                echo '--- Setting up on Ansible VM ---'
-                                mkdir -p ~/ansible_playbooks
-                                cp -r /tmp/ansible/* ~/ansible_playbooks/
-                                cd ~/ansible_playbooks
-
-                                echo '--- Running Basic Setup Playbook ---'
-                                ansible-playbook -i inventory.ini playbook-setup.yml
-
-                                echo '--- Running Monitoring Setup Playbook ---'
-                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
-                            \\" 
-                        \"
+                            echo '--- Running Monitoring Setup Playbook ---'
+                            ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$${GRAFANA_PASS}
+                        \\"
                     """
                 }
             }
@@ -152,5 +150,4 @@ pipeline {
             cleanWs()
         }
     }
-    
 }
