@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        // Project root
-        PROJECT_DIR       = '/mnt/hgfs'
-        
-        // Subdirectories
+        // Corrected Project root based on your structure
+        PROJECT_DIR       = '/mnt/hgfs' 
+
+        // Subdirectories (directly under /mnt/hgfs)
         TERRAFORM_DIR     = '${PROJECT_DIR}/Terraform_vSphere/root'
         ANSIBLE_DIR       = '${PROJECT_DIR}/Ansible_vSphere'
         INVENTORY_FILE    = '${ANSIBLE_DIR}/inventory.ini'
@@ -61,7 +61,7 @@ pipeline {
         stage('Export Terraform Output to JSON') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh 'terraform output -json > ${TF_OUTPUT_JSON}'
+                    sh 'terraform output -json > ${TF_OUTPUT_JSON}' // Uses resolved env var
                 }
             }
         }
@@ -136,7 +136,7 @@ pipeline {
             }
         }
         always {
-            cleanWs()
+            cleanWs() // This might need adjustment based on workspace setup
         }
     }
 }
