@@ -14,7 +14,7 @@ pipeline {
         TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
 
         // OVF Tool path
-        OVFTOOL_PATH = "C:\\Program Files\\VMware\\OVF Tool\\ovftool.exe"
+        OVFTOOL_PATH = "C:\\newovf\\VMwareOVFTool\\ovftool.exe"
     }
 
     options {
@@ -51,7 +51,7 @@ pipeline {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     bat """
                         echo === Setting up Environment ===
-                        set PATH=%PATH%;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Program Files\\VMware\\OVF Tool
+                        set PATH=%PATH%;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\newovf\\VMwareOVFTool
                         
                         echo === Navigating to Terraform Root Directory ===
                         cd Terraform_vSphere\\root
