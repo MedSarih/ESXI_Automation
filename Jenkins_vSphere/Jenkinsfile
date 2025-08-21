@@ -2,134 +2,117 @@ pipeline {
     agent any
 
     environment {
-        // ESXi Connection Details
-        ESXI_HOST     = "172.20.10.51"
-        ESXI_USERNAME = "root"
+        // Project root
+        PROJECT_DIR       = '/mnt/hgfs'
+        
+        // Subdirectories
+        TERRAFORM_DIR     = '${PROJECT_DIR}/Terraform_vSphere/root'
+        ANSIBLE_DIR       = '${PROJECT_DIR}/Ansible_vSphere'
+        INVENTORY_FILE    = '${ANSIBLE_DIR}/inventory.ini'
+        INVENTORY_SCRIPT  = '${ANSIBLE_DIR}/generated_inventory.sh'
+        TF_OUTPUT_JSON    = '${ANSIBLE_DIR}/terraform-output.json'
 
-        // Ansible VM Connection Details
-        ANSIBLE_VM_HOST = "172.20.10.135"
-        ANSIBLE_VM_USER = "template"
-
-        // Paths
-        TERRAFORM_PATH = "/usr/local/bin/terraform"
-        OVFTOOL_PATH   = "/usr/local/bin/ovftool/ovftool"
+        // Jenkins credentials (set in Jenkins UI)
+        ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
+        ANSIBLE_USER_PASS = credentials('ANSIBLE_VM_CREDENTIALS')  // 'template' user + password
+        GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
     }
 
-    options {
-        skipDefaultCheckout true
+    triggers {
+        // Trigger on GitHub push
+        githubPush()
     }
 
     stages {
-
-        stage('Checkout') {
-            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
+        stage('Clone Code from GitHub') {
             steps {
-                cleanWs()
-                echo "📥 Checking out code from SCM..."
                 checkout scm
             }
         }
 
-        stage('Verify Paths') {
-            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
+        stage('Init Terraform') {
             steps {
-                sh '''
-                    echo "=== Checking Terraform ==="
-                    ls -l ${TERRAFORM_PATH}
-                    ${TERRAFORM_PATH} version
-
-                    echo "=== Checking OVF Tool ==="
-                    ls -l ${OVFTOOL_PATH}
-                    ${OVFTOOL_PATH} --version
-
-                    echo "=== Checking shared folder ==="
-                    ls -l /mnt/hgfs
-                '''
+                dir("${TERRAFORM_DIR}") {
+                    sh 'terraform init'
+                }
             }
         }
 
-        stage('Terraform Operations') {
-            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
+        stage('Plan Terraform') {
             steps {
-                withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
+                dir("${TERRAFORM_DIR}") {
                     sh '''
-                        set -e
-                        echo "=== Navigating to Terraform Root Directory ==="
-                        cd /mnt/hgfs/Terraform_vSphere/root
-
-                        echo "=== Initializing Terraform ==="
-                        ${TERRAFORM_PATH} init
-
-                        echo "=== Validating Terraform Configuration ==="
-                        ${TERRAFORM_PATH} validate
-
-                        echo "=== Planning Terraform Changes ==="
-                        ${TERRAFORM_PATH} plan -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
-
-                        echo "=== Applying Terraform Changes ==="
-                        ${TERRAFORM_PATH} apply -auto-approve -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
+                        terraform plan \
+                          -var="esxi_password=${ESXI_PASSWORD}" \
+                          -out=tfplan
                     '''
+                }
+            }
+        }
+
+        stage('Apply Terraform') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh 'terraform apply -auto-approve tfplan'
+                }
+            }
+        }
+
+        stage('Export Terraform Output to JSON') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh 'terraform output -json > ${TF_OUTPUT_JSON}'
                 }
             }
         }
 
         stage('Generate Ansible Inventory') {
-            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 sh '''
-                    set -e
-                    echo "=== Generating Terraform Output JSON ==="
-                    cd /mnt/hgfs/Terraform_vSphere/root
-                    ${TERRAFORM_PATH} output -json vm_inventory > /mnt/hgfs/Ansible_vSphere/terraform-output.json
-
-                    echo "=== Running Inventory Generation Script ==="
-                    cd /mnt/hgfs/Ansible_vSphere
-                    chmod +x generated_inventory.sh
-                    ./generated_inventory.sh
-
-                    echo "=== Displaying Generated Inventory ==="
-                    if [ -f inventory.ini ]; then
-                        cat inventory.ini
-                    else
-                        echo "ERROR: inventory.ini was not generated."
-                        exit 1
-                    fi
+                    chmod +x ${INVENTORY_SCRIPT}
+                    ${INVENTORY_SCRIPT}
                 '''
+                sh 'cat ${INVENTORY_FILE}'  // Debug: show generated inventory
             }
-            post {
-                success {
-                    archiveArtifacts artifacts: 'Ansible_vSphere/inventory.ini,Ansible_vSphere/terraform-output.json', allowEmptyArchive: false
+        }
+
+        stage('Run Ansible: Base Setup') {
+            steps {
+                dir("${ANSIBLE_DIR}") {
+                    withCredentials([
+                        usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS',
+                                         usernameVariable: 'ANSIBLE_USER',
+                                         passwordVariable: 'ANSIBLE_PASS')
+                    ]) {
+                        sh '''
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            ansible-playbook \
+                                -i inventory.ini \
+                                playbook-setup.yml \
+                                --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS}"
+                        '''
+                    }
                 }
             }
         }
 
-        stage('Deploy Ansible Playbooks') {
-            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
+        stage('Run Ansible: Monitoring Stack') {
             steps {
-                withCredentials([
-                    usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
-                    string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
-                ]) {
-                    sh '''
-                        set -e
-                        echo "=== Copying Ansible Files to Ansible VM ==="
-                        scp -o StrictHostKeyChecking=no -r /mnt/hgfs/Ansible_vSphere/* ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST}:/tmp/ansible/
-
-                        echo "=== Executing Ansible Playbooks on Ansible VM ==="
-                        ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST} "
-                            set -e
-                            echo '--- Setting up on Ansible VM ---'
-                            mkdir -p ~/ansible_playbooks
-                            cp -r /tmp/ansible/* ~/ansible_playbooks/
-                            cd ~/ansible_playbooks
-
-                            echo '--- Running Basic Setup Playbook ---'
-                            ansible-playbook -i inventory.ini playbook-setup.yml
-
-                            echo '--- Running Monitoring Setup Playbook ---'
-                            ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_PASS
-                        "
-                    '''
+                dir("${ANSIBLE_DIR}") {
+                    withCredentials([
+                        usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS',
+                                         usernameVariable: 'ANSIBLE_USER',
+                                         passwordVariable: 'ANSIBLE_PASS'),
+                        string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
+                    ]) {
+                        sh '''
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            ansible-playbook \
+                                -i inventory.ini \
+                                playbook-monitoring.yml \
+                                --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}"
+                        '''
+                    }
                 }
             }
         }
@@ -137,19 +120,23 @@ pipeline {
 
     post {
         success {
-            echo '✅ Deployment Pipeline Completed Successfully!'
-            echo "📊 Next steps:"
-            echo "   1. Access Prometheus: http://<MONITORING_VM_IP>:9090"
-            echo "   2. Access Grafana:   http://<MONITORING_VM_IP>:3000"
-            echo "   3. Grafana login: admin / <your_grafana_password>"
+            echo '✅ Pipeline completed successfully!'
+            script {
+                sh '''
+                    echo "Deployment successful!" | mail -s "Jenkins CI/CD Success" admin@company.com || true
+                '''
+            }
         }
         failure {
-            echo '❌ Deployment Pipeline Failed!'
-            echo "🔎 Check the logs above for errors."
+            echo '❌ Pipeline failed!'
+            script {
+                sh '''
+                    echo "Pipeline failed at stage: ${STAGE_NAME}" | mail -s "Jenkins CI/CD Failure" admin@company.com || true
+                '''
+            }
         }
         always {
             cleanWs()
         }
-
     }
 }
