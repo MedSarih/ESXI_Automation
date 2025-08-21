@@ -161,7 +161,7 @@ pipeline {
         }
         failure {
             echo '❌ Deployment Pipeline Failed!'
-            echo "🔎 Please check the logs above to find the cause."
+            echo "🔎Please check the logs above to find the cause."
         }
         always {
             cleanWs()
