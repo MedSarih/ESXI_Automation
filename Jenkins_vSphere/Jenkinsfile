@@ -14,6 +14,9 @@ pipeline {
         TERRAFORM_PATH = "C:\\Program Files\\Terraform\\terraform.exe"
         OVFTOOL_PATH   = "C:\\newovf\\VMwareOVFTool\\ovftool.exe"
         GITBASH_PATH   = "C:\\Program Files\\Git\\bin\\bash.exe"
+
+        // Prepend PATH so Jenkins can find cmd.exe and ovftool.exe
+        PATH = "C:\\Windows\\System32;C:\\Program Files\\VMware\\VMware OVF Tool;C:\\Program Files\\Git\\cmd;${env.PATH}"
     }
 
     options {
