@@ -2,24 +2,21 @@ pipeline {
     agent any
 
     environment {
-        // Corrected Project root based on your structure
         PROJECT_DIR       = '/mnt/hgfs' 
 
-        // Subdirectories (directly under /mnt/hgfs)
+        // Corrected Terraform directory path based on GitHub structure
         TERRAFORM_DIR     = '${PROJECT_DIR}/Terraform_vSphere/root'
         ANSIBLE_DIR       = '${PROJECT_DIR}/Ansible_vSphere'
         INVENTORY_FILE    = '${ANSIBLE_DIR}/inventory.ini'
-        INVENTORY_SCRIPT  = '${ANSIBLE_DIR}/generated_inventory.sh'
+        INVENTORY_SCRIPT      = '${ANSIBLE_DIR}/generated_inventory.sh'
         TF_OUTPUT_JSON    = '${ANSIBLE_DIR}/terraform-output.json'
 
-        // Jenkins credentials (set in Jenkins UI)
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
         ANSIBLE_USER_PASS = credentials('ANSIBLE_VM_CREDENTIALS')  // 'template' user + password
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
     }
 
     triggers {
-        // Trigger on GitHub push
         githubPush()
     }
 
@@ -61,7 +58,7 @@ pipeline {
         stage('Export Terraform Output to JSON') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh 'terraform output -json > ${TF_OUTPUT_JSON}' // Uses resolved env var
+                    sh 'terraform output -json > ${TF_OUTPUT_JSON}'
                 }
             }
         }
@@ -72,7 +69,7 @@ pipeline {
                     chmod +x ${INVENTORY_SCRIPT}
                     ${INVENTORY_SCRIPT}
                 '''
-                sh 'cat ${INVENTORY_FILE}'  // Debug: show generated inventory
+                sh 'cat ${INVENTORY_FILE}'
             }
         }
 
@@ -136,7 +133,7 @@ pipeline {
             }
         }
         always {
-            cleanWs() // This might need adjustment based on workspace setup
+            cleanWs()
         }
     }
 }
