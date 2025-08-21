@@ -1,8 +1,5 @@
 pipeline {
-    agent {
-        label 'any'
-        customWorkspace '/mnt/hgfs/Jenkins_vSphere'
-    }
+    agent any
 
     environment {
         // ESXi Connection Details
@@ -25,6 +22,7 @@ pipeline {
     stages {
 
         stage('Checkout') {
+            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 cleanWs()
                 echo "📥 Checking out code from SCM..."
@@ -33,6 +31,7 @@ pipeline {
         }
 
         stage('Verify Paths') {
+            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 sh '''
                     echo "=== Checking Terraform ==="
@@ -50,6 +49,7 @@ pipeline {
         }
 
         stage('Terraform Operations') {
+            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     sh '''
@@ -74,6 +74,7 @@ pipeline {
         }
 
         stage('Generate Ansible Inventory') {
+            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 sh '''
                     set -e
@@ -103,6 +104,7 @@ pipeline {
         }
 
         stage('Deploy Ansible Playbooks') {
+            agent { label 'any'; customWorkspace '/mnt/hgfs/Jenkins_vSphere' }
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
