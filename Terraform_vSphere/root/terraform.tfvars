@@ -4,7 +4,7 @@ esxi_password   = "Mohammeds2003."
 vm_ip_subnet    = "172.20.10"
 vm_gateway      = "172.20.10.1"
 esxi_hostport   = "22"
-clone_source_vm = "[datastore1] templateVM/templateVM.vmx"
+clone_source_vm = "templateVM"
 nic_type        = "vmxnet3"
 
 
