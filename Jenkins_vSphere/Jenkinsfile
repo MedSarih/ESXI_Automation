@@ -36,7 +36,7 @@ pipeline {
                     echo === Testing cmd.exe ===
                     cmd.exe /c "echo cmd.exe is accessible"
                     echo === Testing OVF Tool ===
-                    ovftool --version
+                    "C:\\Program Files\\VMware\\OVF Tool\\ovftool.exe" --version
                     echo === Testing Terraform ===
                     "${env.TERRAFORM_PATH}" version
                 """
@@ -63,13 +63,15 @@ pipeline {
                         "${env.TERRAFORM_PATH}" plan ^
                           -var="esxi_hostname=%ESXI_HOST%" ^
                           -var="esxi_username=%ESXI_USERNAME%" ^
-                          -var="esxi_password=%TF_VAR_esxi_password%"
+                          -var="esxi_password=%TF_VAR_esxi_password%" ^
+                          -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
 
                         echo === Applying Terraform Changes ===
                         "${env.TERRAFORM_PATH}" apply -auto-approve ^
                           -var="esxi_hostname=%ESXI_HOST%" ^
                           -var="esxi_username=%ESXI_USERNAME%" ^
-                          -var="esxi_password=%TF_VAR_esxi_password%"
+                          -var="esxi_password=%TF_VAR_esxi_password%" ^
+                          -var="clone_source_vm=[datastore1] templateVM/templateVM.vmx"
                     """
                 }
             }
