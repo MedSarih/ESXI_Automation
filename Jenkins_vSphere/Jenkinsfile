@@ -31,13 +31,9 @@ pipeline {
             }
         }
 
-        stage('Test Environment') {
+        stage('Test Tools') {
             steps {
                 bat """
-                    echo === Testing Environment Setup ===
-                    echo Current PATH: %PATH%
-                    echo === Testing cmd.exe ===
-                    cmd.exe /c "echo cmd.exe is accessible"
                     echo === Testing OVF Tool ===
                     "${OVFTOOL_PATH}" --version
                     echo === Testing Terraform ===
@@ -50,9 +46,6 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     bat """
-                        echo === Setting up Environment ===
-                        set PATH=%PATH%;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\newovf\\VMwareOVFTool
-                        
                         echo === Navigating to Terraform Root Directory ===
                         cd Terraform_vSphere\\root
 
