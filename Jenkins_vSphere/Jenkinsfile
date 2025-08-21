@@ -2,28 +2,72 @@ pipeline {
     agent any
 
     environment {
-        PROJECT_DIR       = '/mnt/hgfs' 
+        // --- Path Definitions (Relative to Git Repo Root / Jenkins Workspace) ---
+        // No need for PROJECT_DIR=/mnt/hgfs when using Git clone for Terraform steps
+        TERRAFORM_DIR     = "Terraform_vSphere/root" // Relative path from workspace root
+        ANSIBLE_DIR       = "Ansible_vSphere"        // Relative path from workspace root
+        INVENTORY_FILE    = "${ANSIBLE_DIR}/inventory.ini"
+        INVENTORY_SCRIPT  = "${ANSIBLE_DIR}/generated_inventory.sh"
+        TF_OUTPUT_JSON    = "${ANSIBLE_DIR}/terraform-output.json" // Output file for inventory script
 
-        // Corrected Terraform directory path based on GitHub structure
-        TERRAFORM_DIR     = '${PROJECT_DIR}/Terraform_vSphere/root'
-        ANSIBLE_DIR       = '${PROJECT_DIR}/Ansible_vSphere'
-        INVENTORY_FILE    = '${ANSIBLE_DIR}/inventory.ini'
-        INVENTORY_SCRIPT      = '${ANSIBLE_DIR}/generated_inventory.sh'
-        TF_OUTPUT_JSON    = '${ANSIBLE_DIR}/terraform-output.json'
-
+        // --- Credentials from Jenkins (Secure) ---
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
-        ANSIBLE_USER_PASS = credentials('ANSIBLE_VM_CREDENTIALS')  // 'template' user + password
+        // ANSIBLE_VM_CREDENTIALS provides ANSIBLE_USER and ANSIBLE_PASS
+        ANSIBLE_VM_CREDENTIALS = credentials('ANSIBLE_VM_CREDENTIALS')
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
     }
 
     triggers {
+        // Triggered by GitHub webhook (requires Jenkins job config: "GitHub hook trigger...")
         githubPush()
+        // Optional: Add polling as a backup
+        // pollSCM('H/5 * * * *') // Check every 5 minutes if webhook fails
     }
 
     stages {
-        stage('Clone Code from GitHub') {
+        stage('Checkout Code') {
             steps {
+                // This clones the repository based on Jenkins job SCM settings
                 checkout scm
+                // Optional: Debug - List workspace contents to verify checkout
+                // sh 'ls -la'
+            }
+        }
+
+        stage('Validate Environment') {
+            steps {
+                sh '''
+                    echo "=== Checking Tools ==="
+                    which terraform || { echo "ERROR: terraform not found in PATH"; exit 1; }
+                    terraform version
+
+                    which ansible || { echo "ERROR: ansible not found in PATH"; exit 1; }
+                    ansible --version
+
+                    which jq || { echo "ERROR: jq not found in PATH"; exit 1; }
+                    jq --version
+
+                    echo "=== Checking Directories and Files ==="
+                    if [ ! -d "${TERRAFORM_DIR}" ]; then
+                        echo "ERROR: Terraform directory ${TERRAFORM_DIR} not found!"
+                        ls -la . || true
+                        exit 1
+                    fi
+
+                    if [ ! -d "${ANSIBLE_DIR}" ]; then
+                        echo "ERROR: Ansible directory ${ANSIBLE_DIR} not found!"
+                        ls -la . || true
+                        exit 1
+                    fi
+
+                    if [ ! -f "${INVENTORY_SCRIPT}" ]; then
+                        echo "ERROR: Inventory script ${INVENTORY_SCRIPT} not found!"
+                        ls -la ${ANSIBLE_DIR} || true
+                        exit 1
+                    fi
+
+                    echo "All checks passed."
+                '''
             }
         }
 
@@ -55,34 +99,38 @@ pipeline {
             }
         }
 
-        stage('Export Terraform Output to JSON') {
+        stage('Export Terraform Output') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh 'terraform output -json > ${TF_OUTPUT_JSON}'
+                    // Export JSON output to the Ansible directory for the inventory script
+                    sh "terraform output -json > \${WORKSPACE}/${TF_OUTPUT_JSON}"
+                    // Debug: Show the output file was created
+                    sh "ls -l \${WORKSPACE}/${TF_OUTPUT_JSON}"
                 }
             }
         }
 
         stage('Generate Ansible Inventory') {
             steps {
-                sh '''
-                    chmod +x ${INVENTORY_SCRIPT}
-                    ${INVENTORY_SCRIPT}
-                '''
-                sh 'cat ${INVENTORY_FILE}'
+                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for script execution context
+                    sh '''
+                        chmod +x "${INVENTORY_SCRIPT}"
+                        "${INVENTORY_SCRIPT}"
+                    '''
+                    // Debug: Display the generated inventory
+                    sh 'cat inventory.ini'
+                }
             }
         }
 
         stage('Run Ansible: Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
-                    withCredentials([
-                        usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS',
-                                         usernameVariable: 'ANSIBLE_USER',
-                                         passwordVariable: 'ANSIBLE_PASS')
-                    ]) {
+                    // Use credentials helper to pass username/password securely
+                    withCredentials([usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')]) {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
+                            # Use --extra-vars to pass the password from Jenkins credentials
                             ansible-playbook \
                                 -i inventory.ini \
                                 playbook-setup.yml \
@@ -96,10 +144,9 @@ pipeline {
         stage('Run Ansible: Monitoring Stack') {
             steps {
                 dir("${ANSIBLE_DIR}") {
+                    // Use credentials helper for VM access and Grafana password
                     withCredentials([
-                        usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS',
-                                         usernameVariable: 'ANSIBLE_USER',
-                                         passwordVariable: 'ANSIBLE_PASS'),
+                        usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
                         sh '''
@@ -118,20 +165,18 @@ pipeline {
     post {
         success {
             echo '✅ Pipeline completed successfully!'
-            script {
-                sh '''
-                    echo "Deployment successful!" | mail -s "Jenkins CI/CD Success" admin@company.com || true
-                '''
-            }
+            // Optional: Send notification
+            // sh 'echo "Deployment successful!" | mail -s "Jenkins CI/CD Success" admin@example.com'
         }
         failure {
             echo '❌ Pipeline failed!'
-            script {
-                sh '''
-                    echo "Pipeline failed at stage: ${STAGE_NAME}" | mail -s "Jenkins CI/CD Failure" admin@company.com || true
-                '''
-            }
+            // Optional: Send notification with stage info
+            // sh 'echo "Pipeline failed at stage: ${STAGE_NAME}" | mail -s "Jenkins CI/CD Failure" admin@example.com'
         }
+        unstable {
+             echo '⚠️ Pipeline is unstable (e.g., tests failed).'
+        }
+        // Always clean up the workspace
         always {
             cleanWs()
         }
