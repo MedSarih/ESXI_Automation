@@ -1,5 +1,8 @@
 pipeline {
-    agent any
+    agent {
+        label 'any'
+        customWorkspace '/mnt/hgfs/Jenkins_vSphere'
+    }
 
     environment {
         // ESXi Connection Details
@@ -10,8 +13,9 @@ pipeline {
         ANSIBLE_VM_HOST = "172.20.10.135"
         ANSIBLE_VM_USER = "template"
 
-        // Ensure tools are in PATH
-        PATH = "/usr/local/bin:${env.PATH}"
+        // Paths
+        TERRAFORM_PATH = "/usr/local/bin/terraform"
+        OVFTOOL_PATH   = "/usr/local/bin/ovftool/ovftool"
     }
 
     options {
@@ -28,58 +32,57 @@ pipeline {
             }
         }
 
-        stage('Test OVF Tool') {
+        stage('Verify Paths') {
             steps {
-                sh """
-                    echo "=== Testing OVF Tool ==="
-                    ovftool --version
-                """
-            }
-        }
+                sh '''
+                    echo "=== Checking Terraform ==="
+                    ls -l ${TERRAFORM_PATH}
+                    ${TERRAFORM_PATH} version
 
-        stage('Test Terraform') {
-            steps {
-                sh """
-                    echo "=== Testing Terraform ==="
-                    terraform version
-                """
+                    echo "=== Checking OVF Tool ==="
+                    ls -l ${OVFTOOL_PATH}
+                    ${OVFTOOL_PATH} --version
+
+                    echo "=== Checking shared folder ==="
+                    ls -l /mnt/hgfs
+                '''
             }
         }
 
         stage('Terraform Operations') {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
-                    sh """
+                    sh '''
                         set -e
                         echo "=== Navigating to Terraform Root Directory ==="
-                        cd ${WORKSPACE}/Terraform_vSphere/root
+                        cd /mnt/hgfs/Terraform_vSphere/root
 
                         echo "=== Initializing Terraform ==="
-                        terraform init
+                        ${TERRAFORM_PATH} init
 
                         echo "=== Validating Terraform Configuration ==="
-                        terraform validate
+                        ${TERRAFORM_PATH} validate
 
                         echo "=== Planning Terraform Changes ==="
-                        terraform plan -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
+                        ${TERRAFORM_PATH} plan -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
 
                         echo "=== Applying Terraform Changes ==="
-                        terraform apply -auto-approve -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
-                    """
+                        ${TERRAFORM_PATH} apply -auto-approve -var="esxi_hostname=${ESXI_HOST}" -var="esxi_username=${ESXI_USERNAME}" -var="esxi_password=${TF_VAR_esxi_password}" -var="clone_source_vm=templateVM"
+                    '''
                 }
             }
         }
 
         stage('Generate Ansible Inventory') {
             steps {
-                sh """
+                sh '''
                     set -e
                     echo "=== Generating Terraform Output JSON ==="
-                    cd ${WORKSPACE}/Terraform_vSphere/root
-                    terraform output -json vm_inventory > ${WORKSPACE}/Ansible_vSphere/terraform-output.json
+                    cd /mnt/hgfs/Terraform_vSphere/root
+                    ${TERRAFORM_PATH} output -json vm_inventory > /mnt/hgfs/Ansible_vSphere/terraform-output.json
 
                     echo "=== Running Inventory Generation Script ==="
-                    cd ${WORKSPACE}/Ansible_vSphere
+                    cd /mnt/hgfs/Ansible_vSphere
                     chmod +x generated_inventory.sh
                     ./generated_inventory.sh
 
@@ -90,7 +93,7 @@ pipeline {
                         echo "ERROR: inventory.ini was not generated."
                         exit 1
                     fi
-                """
+                '''
             }
             post {
                 success {
@@ -105,13 +108,13 @@ pipeline {
                     usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                     string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                 ]) {
-                    sh """
+                    sh '''
                         set -e
                         echo "=== Copying Ansible Files to Ansible VM ==="
-                        scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/Ansible_vSphere/* ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST}:/tmp/ansible/
+                        scp -o StrictHostKeyChecking=no -r /mnt/hgfs/Ansible_vSphere/* ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST}:/tmp/ansible/
 
                         echo "=== Executing Ansible Playbooks on Ansible VM ==="
-                        ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST} \"
+                        ssh -o StrictHostKeyChecking=no ${ANSIBLE_VM_USER}@${ANSIBLE_VM_HOST} "
                             set -e
                             echo '--- Setting up on Ansible VM ---'
                             mkdir -p ~/ansible_playbooks
@@ -123,8 +126,8 @@ pipeline {
 
                             echo '--- Running Monitoring Setup Playbook ---'
                             ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_PASS
-                        \"
-                    """
+                        "
+                    '''
                 }
             }
         }
