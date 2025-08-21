@@ -28,28 +28,17 @@ pipeline {
             }
         }
 
-        stage('Debug Directory Structure') {
+        stage('Test Environment') {
             steps {
                 bat """
-                    echo === Current Directory ===
-                    cd
-                    echo === Listing Root Directory ===
-                    dir
-                    echo === Checking Terraform_vSphere Directory ===
-                    if exist Terraform_vSphere (
-                        echo Terraform_vSphere directory exists
-                        echo === Contents of Terraform_vSphere ===
-                        dir Terraform_vSphere
-                        echo === Looking for root directory ===
-                        dir Terraform_vSphere\\root
-                        echo === Looking for modules/vm directory ===
-                        dir Terraform_vSphere\\modules\\vm
-                        echo === Looking for .tf files in root ===
-                        dir Terraform_vSphere\\root\\*.tf
-                    ) else (
-                        echo ERROR: Terraform_vSphere directory not found!
-                        exit /b 1
-                    )
+                    echo === Testing Environment Setup ===
+                    echo Current PATH: %PATH%
+                    echo === Testing cmd.exe ===
+                    cmd.exe /c "echo cmd.exe is accessible"
+                    echo === Testing OVF Tool ===
+                    ovftool --version
+                    echo === Testing Terraform ===
+                    "${env.TERRAFORM_PATH}" version
                 """
             }
         }
@@ -58,6 +47,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'ESXI_PASSWORD', variable: 'TF_VAR_esxi_password')]) {
                     bat """
+                        echo === Setting up Environment ===
+                        set PATH=%PATH%;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Program Files\\VMware\\OVF Tool
+                        
                         echo === Navigating to Terraform Root Directory ===
                         cd Terraform_vSphere\\root
 
@@ -88,8 +80,11 @@ pipeline {
                 bat """
                     \"C:\\Program Files\\Git\\bin\\bash.exe\" -c "
                         set -e
+                        echo '=== Setting up Environment ==='
+                        export PATH=\\\"$PATH:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Program\\ Files/VMware/VMware\\ OVF\\ Tool\\\"
+                        
                         echo '=== Generating Terraform Output JSON ==='
-                        cd Terraform_vSphere\\root
+                        cd Terraform_vSphere/root
                         '${env.TERRAFORM_PATH}' output -json vm_inventory > ../Ansible_vSphere/terraform-output.json
 
                         echo '=== Running Inventory Generation Script ==='
@@ -123,6 +118,9 @@ pipeline {
                     bat """
                         \"C:\\Program Files\\Git\\bin\\bash.exe\" -c "
                             set -e
+                            echo '=== Setting up Environment ==='
+                            export PATH=\\\"$PATH:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Program\\ Files/VMware/VMware\\ OVF\\ Tool\\\"
+                            
                             echo '=== Copying Ansible Files to Ansible VM ==='
                             export ANSIBLE_VM_USER_TMP='%ANSIBLE_USER%'
                             export ANSIBLE_VM_PASS_TMP='%ANSIBLE_PASS%'
@@ -142,7 +140,7 @@ pipeline {
                                 ansible-playbook -i inventory.ini playbook-setup.yml
 
                                 echo '--- Running Monitoring Setup Playbook ---'
-                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\$GRAFANA_ADMIN_PASS_TMP
+                                ansible-playbook -i inventory.ini playbook-monitor.yml -e grafana_admin_password=\\\$GRAFANA_ADMIN_PASS_TMP
                             \"
                         "
                     """
@@ -161,7 +159,7 @@ pipeline {
         }
         failure {
             echo '❌ Deployment Pipeline Failed!'
-            echo "🔎Please check the logs above to find the cause."
+            echo "🔎 Please check the logs above to find the cause."
         }
         always {
             cleanWs()
