@@ -1,59 +1,72 @@
 #!/bin/bash
-# File: generated_inventory.sh
-# Generate Ansible inventory from Terraform output (JSON)
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INVENTORY_FILE="$SCRIPT_DIR/inventory.ini"
 TEMP_OUTPUT="$SCRIPT_DIR/terraform-output.json"
 
-echo "Generating inventory in Ansible directory..."
-echo "Inventory file: $INVENTORY_FILE"
-echo "Terraform output: $TEMP_OUTPUT"
+echo "🔧 Generating Ansible inventory..."
+echo "📁 Inventory file: $INVENTORY_FILE"
+echo "📄 Terraform output: $TEMP_OUTPUT"
 
-# Check if Terraform output file exists
-if [ ! -f "$TEMP_OUTPUT" ]; then
-    echo "Error: Terraform output file not found: $TEMP_OUTPUT" >&2
-    exit 1
+# Check if file exists
+if [[ ! -f "$TEMP_OUTPUT" ]]; then
+  echo "❌ ERROR: Terraform output file not found: $TEMP_OUTPUT" >&2
+  exit 1
 fi
 
 # Validate JSON
 if ! jq empty "$TEMP_OUTPUT" 2>/dev/null; then
-    echo "Error: Invalid JSON in Terraform output" >&2
-    exit 1
+  echo "❌ ERROR: Invalid JSON in $TEMP_OUTPUT" >&2
+  echo "👉 Try running: jq . $TEMP_OUTPUT"
+  exit 1
 fi
 
-# Create or empty the Ansible inventory file
+# Extract all VMs with role and name
+echo "🔍 Found VMs:"
+jq -r 'to_entries[] | "  Key='\''\(.key)'\'', Name='\''\(.value.name)'\'', Role='\''\(.value.role)'\'', IP='\''\(.value.ip)'\'', User='\''\(.value.ansible_user)'\''"' "$TEMP_OUTPUT"
+
+# Start fresh inventory
 > "$INVENTORY_FILE"
 
-# Add monitoring servers group to inventory (using template user)
+# Add monitoring servers
 echo "[monitoring_servers]" >> "$INVENTORY_FILE"
 jq -r '
   to_entries[]
-  | select(.value.role=="monitoring")
-  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=template"
-' "$TEMP_OUTPUT" >> "$INVENTORY_FILE"
+  | select(.value.role and .value.role == "monitoring")
+  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user)"
+' "$TEMP_OUTPUT" >> "$INVENTORY_FILE" || true
 
-# Add application servers group to inventory (using template user)
+# Add application servers
 echo "" >> "$INVENTORY_FILE"
 echo "[application_servers]" >> "$INVENTORY_FILE"
 jq -r '
   to_entries[]
-  | select(.value.role=="application")
-  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=template"
-' "$TEMP_OUTPUT" >> "$INVENTORY_FILE"
+  | select(.value.role and .value.role == "application")
+  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user)"
+' "$TEMP_OUTPUT" >> "$INVENTORY_FILE" || true
 
-# Add all servers group
-echo "" >> "$INVENTORY_FILE"
-echo "[all_servers:children]" >> "$INVENTORY_FILE"
-echo "monitoring_servers" >> "$INVENTORY_FILE"
-echo "application_servers" >> "$INVENTORY_FILE"
+# Add groups
+cat >> "$INVENTORY_FILE" << EOF
 
-# Add global variables for template user authentication
-echo "" >> "$INVENTORY_FILE"
-echo "[all:vars]" >> "$INVENTORY_FILE"
-echo "ansible_ssh_pass = template" >> "$INVENTORY_FILE"  # ← Using template password
-echo "ansible_ssh_common_args = -o StrictHostKeyChecking=no" >> "$INVENTORY_FILE"
+[all_servers:children]
+monitoring_servers
+application_servers
 
-echo "SUCCESS: Inventory generated at $INVENTORY_FILE"
+[all:vars]
+ansible_ssh_pass = \${ANSIBLE_VM_CREDENTIALS}
+ansible_ssh_common_args = -o StrictHostKeyChecking=no
+EOF
+
+# Final check
+echo ""
+if [[ ! -s "$INVENTORY_FILE" ]]; then
+  echo "❌ ERROR: Inventory file is empty!" >&2
+  exit 1
+fi
+
+echo "✅ SUCCESS: Inventory generated at $INVENTORY_FILE"
+echo ""
+echo "📄 Contents:"
+cat "$INVENTORY_FILE"
+echo ""
