@@ -1,8 +1,11 @@
----
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   become: true
   vars:
+    ansible_become: true
+    ansible_become_method: sudo
+    ansible_become_user: root
+    ansible_become_password: ""
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
