@@ -2,7 +2,6 @@
 - name: Main VM Configuration (Security & Basic Setup)
   hosts: all
   become: true
-
   vars:
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"

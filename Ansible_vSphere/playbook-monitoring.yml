@@ -2,7 +2,6 @@
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   become: true
-
   vars:
     prometheus_port: 9090
     grafana_port: 3000
