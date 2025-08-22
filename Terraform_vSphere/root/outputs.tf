@@ -13,7 +13,7 @@ output "vm_inventory" {
     for name, cfg in var.vm_configs : name => {
       name         = name
       ip           = module.vm[name].vm_ip
-      ansible_user = "ubuntu"
+      ansible_user = "template"
       role         = cfg.role
     }
   }

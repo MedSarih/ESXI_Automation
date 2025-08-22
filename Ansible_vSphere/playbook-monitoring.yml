@@ -8,7 +8,7 @@
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
-    new_user: devopsadmin
+    new_user: template
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
 
   tasks:
