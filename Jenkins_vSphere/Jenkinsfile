@@ -2,24 +2,17 @@ pipeline {
     agent any
 
     environment {
-        // --- Path Definitions (Relative to Git Repo Root / Jenkins Workspace) ---
         TERRAFORM_DIR     = "Terraform_vSphere/root" // Relative path from workspace root
         ANSIBLE_DIR       = "Ansible_vSphere"        // Relative path from workspace root
-        // Use WORKSPACE variable to construct full paths for scripts/files
-        // INVENTORY_FILE, INVENTORY_SCRIPT, TF_OUTPUT_JSON defined dynamically in stages
 
-        // --- Credentials from Jenkins (Secure) ---
+        //Credentials from Jenkins
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
-        // ANSIBLE_VM_CREDENTIALS provides ANSIBLE_USER and ANSIBLE_PASS
         ANSIBLE_VM_CREDENTIALS = credentials('ANSIBLE_VM_CREDENTIALS')
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
     }
 
     triggers {
-        // Triggered by GitHub webhook (requires Jenkins job config: "GitHub hook trigger...")
         githubPush()
-        // Optional: Add polling as a backup
-        // pollSCM('H/5 * * * *') // Check every 5 minutes if webhook fails
     }
 
     stages {
@@ -27,8 +20,6 @@ pipeline {
             steps {
                 // This clones the repository based on Jenkins job SCM settings
                 checkout scm
-                // Optional: Debug - List workspace contents to verify checkout
-                // sh 'echo "Workspace contents:" && ls -la'
             }
         }
 
@@ -45,7 +36,6 @@ pipeline {
                     which jq || { echo "ERROR: jq not found in PATH"; exit 1; }
                     jq --version
 
-                    # Check ovftool specifically, as it had issues before
                     which ovftool || { echo "ERROR: ovftool not found in PATH"; exit 1; }
                     ovftool --version
 
@@ -105,7 +95,6 @@ pipeline {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     // Export JSON output to the Ansible directory for the inventory script
-                    // Use WORKSPACE env var to ensure correct absolute path
                     sh "terraform output -json > \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
                     // Debug: Show the output file was created
                     sh "ls -l \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
@@ -126,9 +115,9 @@ pipeline {
             }
         }
 
-        stage('Run Ansible: Base Setup') {
+        stage('Ansible Base Setup') {
             steps {
-                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for relative path 'inventory.ini'
+                dir("${ANSIBLE_DIR}") { 
                     // Use credentials helper to pass username/password securely
                     withCredentials([usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')]) {
                         sh '''
@@ -144,9 +133,9 @@ pipeline {
             }
         }
 
-        stage('Run Ansible: Monitoring Stack') {
+        stage('Ansible Monitoring Stack') {
             steps {
-                dir("${ANSIBLE_DIR}") { // Change to Ansible dir for relative path 'inventory.ini'
+                dir("${ANSIBLE_DIR}") { 
                     // Use credentials helper for VM access and Grafana password
                     withCredentials([
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
@@ -167,17 +156,13 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
-            // Optional: Send notification
-            // sh 'echo "Deployment successful!" | mail -s "Jenkins CI/CD Success" admin@example.com'
+            echo '✅ Deployment successful!'
         }
         failure {
-            echo '❌ Pipeline failed!'
-            // Optional: Send notification with stage info
-            // sh 'echo "Pipeline failed at stage: ${STAGE_NAME}" | mail -s "Jenkins CI/CD Failure" admin@example.com'
+            echo '❌ Deployment failed!'
         }
         unstable {
-             echo '⚠️ Pipeline is unstable (e.g., tests failed).'
+             echo '⚠️ Deployment is unstable (e.g., tests failed).'
         }
         // Always clean up the workspace
         always {
