@@ -80,6 +80,7 @@
         rule: allow
         name: OpenSSH
 
+
     - name: Enable UFW firewall
       ufw:
         state: enabled
