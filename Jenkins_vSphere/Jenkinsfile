@@ -91,13 +91,29 @@ pipeline {
             }
         }
 
+        // FIXED STAGE: Export Terraform Output
         stage('Export Terraform Output') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    // Export JSON output to the Ansible directory for the inventory script
-                    sh "terraform output -json > \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
-                    // Debug: Show the output file was created
-                    sh "ls -l \${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
+                dir("${TERRAFORM_DIR}") { // Make sure you are in the TF dir
+                    sh '''
+                        echo "🔧 Exporting Terraform output..."
+                        # Force no color and ensure clean output
+                        TF_CLI_ARGS="-no-color" terraform output -json 2>&1 | tee raw_output.json
+
+                        # Validate and clean the output using jq to ensure it's valid JSON
+                        if jq . raw_output.json > terraform-output.json 2>/dev/null; then
+                            echo "✅ Terraform output successfully exported and validated."
+                            # Move the clean JSON file to the Ansible directory
+                            mv terraform-output.json "${WORKSPACE}/${ANSIBLE_DIR}/"
+                            echo "📄 Contents preview:"
+                            head -20 "${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
+                        else
+                            echo "❌ ERROR: Failed to generate valid JSON from terraform output."
+                            echo "Raw output was (first 50 lines):"
+                            head -50 raw_output.json
+                            exit 1
+                        fi
+                    '''
                 }
             }
         }
