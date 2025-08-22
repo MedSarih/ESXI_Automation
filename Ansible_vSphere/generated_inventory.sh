@@ -13,6 +13,7 @@ echo "📄 Terraform output: $TERRAFORM_OUTPUT"
 if [[ ! -f "$TERRAFORM_OUTPUT" ]]; then
   echo "❌ ERROR: Terraform output file not found: $TERRAFORM_OUTPUT" >&2
   exit 1
+  
 fi
 
 # Validate JSON
