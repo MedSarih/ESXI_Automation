@@ -13,7 +13,6 @@ echo "📄 Terraform output: $TERRAFORM_OUTPUT"
 if [[ ! -f "$TERRAFORM_OUTPUT" ]]; then
   echo "❌ ERROR: Terraform output file not found: $TERRAFORM_OUTPUT" >&2
   exit 1
-  
 fi
 
 # Validate JSON
@@ -24,25 +23,27 @@ if ! jq -e . "$TERRAFORM_OUTPUT" > /dev/null 2>&1; then
   exit 1
 fi
 
-echo "🔍 Parsing VMs from vm_inventory..."
+echo "🔍 Parsing VMs from vm_inventory.value..."
 
 # Start fresh inventory
 > "$INVENTORY_FILE"
 
-# Add monitoring servers - Robust jq filter
+# Add monitoring servers - Correct path: .vm_inventory.value
 echo "[monitoring_servers]" >> "$INVENTORY_FILE"
 jq -r '
-  .vm_inventory // {} | to_entries[]
+  .vm_inventory.value
+  | to_entries[]
   | select(.value | type == "object")
   | select(.value.role == "monitoring")
   | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "ubuntu")"
 ' "$TERRAFORM_OUTPUT" >> "$INVENTORY_FILE" || echo "# No monitoring servers found or error parsing" >> "$INVENTORY_FILE"
 
-# Add application servers - Robust jq filter
+# Add application servers - Correct path: .vm_inventory.value
 echo "" >> "$INVENTORY_FILE"
 echo "[application_servers]" >> "$INVENTORY_FILE"
 jq -r '
-  .vm_inventory // {} | to_entries[]
+  .vm_inventory.value
+  | to_entries[]
   | select(.value | type == "object")
   | select(.value.role == "application")
   | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "ubuntu")"
