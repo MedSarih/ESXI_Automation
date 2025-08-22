@@ -1,5 +1,4 @@
 ---
-# Main VM Configuration Playbook
 - name: Main VM Configuration (Security & Basic Setup)
   hosts: all
   become: true
@@ -8,12 +7,25 @@
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
     timezone: "Africa/Casablanca"
+    dns_servers:
+      - 8.8.8.8
+      - 1.1.1.1
 
   tasks:
     ###########################################################################
+    # DNS CONFIGURATION (Fix Internet Access)
+    ###########################################################################
+    - name: Configure DNS
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          {% for ns in dns_servers %}
+          nameserver {{ ns }}
+          {% endfor %}
+
+    ###########################################################################
     # SYSTEM UPDATES & MAINTENANCE
     ###########################################################################
-    
     - name: Update package cache and upgrade packages
       apt:
         update_cache: yes
@@ -22,7 +34,6 @@
     ###########################################################################
     # TIMEZONE CONFIGURATION
     ###########################################################################
-    
     - name: Set system timezone
       timezone:
         name: "{{ timezone }}"
@@ -30,7 +41,6 @@
     ###########################################################################
     # ESSENTIAL TOOLS INSTALLATION
     ###########################################################################
-    
     - name: Install essential packages
       apt:
         name:
@@ -44,7 +54,6 @@
     ###########################################################################
     # USER MANAGEMENT
     ###########################################################################
-    
     - name: Create sudo user "{{ new_user }}"
       user:
         name: "{{ new_user }}"
@@ -56,7 +65,6 @@
     ###########################################################################
     # FIREWALL CONFIGURATION
     ###########################################################################
-    
     - name: Allow SSH through firewall
       ufw:
         rule: allow

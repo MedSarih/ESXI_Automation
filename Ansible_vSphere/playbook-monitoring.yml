@@ -1,5 +1,4 @@
 ---
-# Monitoring Server Setup Playbook
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   become: true
@@ -10,12 +9,25 @@
     monitoring_data_dir: /opt/monitoring
     new_user: template
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
+    dns_servers:
+      - 8.8.8.8
+      - 1.1.1.1
 
   tasks:
     ###########################################################################
+    # DNS CONFIGURATION (Fix Internet Access)
+    ###########################################################################
+    - name: Configure DNS
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          {% for ns in dns_servers %}
+          nameserver {{ ns }}
+          {% endfor %}
+
+    ###########################################################################
     # SYSTEM PREPARATION
     ###########################################################################
-    
     - name: Update package cache
       apt:
         update_cache: yes
@@ -23,7 +35,6 @@
     ###########################################################################
     # DOCKER AND PYTHON SETUP
     ###########################################################################
-    
     - name: Install Docker and Python dependencies
       apt:
         name:
@@ -53,7 +64,6 @@
     ###########################################################################
     # DOCKER PYTHON MODULES INSTALLATION
     ###########################################################################
-    
     - name: Install Docker Python modules using shell command
       shell: |
         pip3 install docker docker-compose
@@ -62,7 +72,6 @@
     ###########################################################################
     # DOCKER SERVICE SETUP
     ###########################################################################
-    
     - name: Reload systemd daemon
       systemd:
         daemon_reload: yes
@@ -82,7 +91,6 @@
     ###########################################################################
     # PERSISTENT STORAGE SETUP
     ###########################################################################
-    
     - name: Create monitoring directories
       file:
         path: "{{ item }}"
@@ -97,7 +105,6 @@
     ###########################################################################
     # PROMETHEUS DEPLOYMENT
     ###########################################################################
-    
     - name: Pull Prometheus Docker image using shell
       shell: docker pull prom/prometheus:v2.45.0
       ignore_errors: yes
@@ -107,12 +114,10 @@
         content: |
           global:
             scrape_interval: 15s
-            
           scrape_configs:
             - job_name: 'prometheus'
               static_configs:
                 - targets: ['localhost:9090']
-                
             - job_name: 'node_exporter'
               static_configs:
                 - targets: []
@@ -137,7 +142,6 @@
     ###########################################################################
     # GRAFANA DEPLOYMENT
     ###########################################################################
-    
     - name: Pull Grafana Docker image using shell
       shell: docker pull grafana/grafana:9.5.6
       ignore_errors: yes
@@ -157,7 +161,6 @@
     ###########################################################################
     # FIREWALL CONFIGURATION
     ###########################################################################
-    
     - name: Allow Prometheus and Grafana through firewall
       ufw:
         rule: allow
