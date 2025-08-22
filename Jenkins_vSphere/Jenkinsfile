@@ -2,10 +2,8 @@ pipeline {
     agent any
 
     environment {
-        TERRAFORM_DIR     = "Terraform_vSphere/root" // Relative path from workspace root
-        ANSIBLE_DIR       = "Ansible_vSphere"        // Relative path from workspace root
-
-        //Credentials from Jenkins
+        TERRAFORM_DIR     = "Terraform_vSphere/root"
+        ANSIBLE_DIR       = "Ansible_vSphere"
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
         ANSIBLE_VM_CREDENTIALS = credentials('ANSIBLE_VM_CREDENTIALS')
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
@@ -18,7 +16,6 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                // This clones the repository based on Jenkins job SCM settings
                 checkout scm
             }
         }
@@ -27,47 +24,21 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Checking Tools ==="
-                    which terraform || { echo "ERROR: terraform not found in PATH"; exit 1; }
+                    which terraform || { echo "ERROR: terraform not found"; exit 1; }
                     terraform version
-
-                    which ansible || { echo "ERROR: ansible not found in PATH"; exit 1; }
+                    which ansible || { echo "ERROR: ansible not found"; exit 1; }
                     ansible --version
-
-                    which jq || { echo "ERROR: jq not found in PATH"; exit 1; }
+                    which jq || { echo "ERROR: jq not found"; exit 1; }
                     jq --version
-
-                    which ovftool || { echo "ERROR: ovftool not found in PATH"; exit 1; }
+                    which ovftool || { echo "ERROR: ovftool not found"; exit 1; }
                     ovftool --version
-
-                    echo "=== Checking Directories and Files ==="
-                    if [ ! -d "${TERRAFORM_DIR}" ]; then
-                        echo "ERROR: Terraform directory ${TERRAFORM_DIR} not found!"
-                        ls -la . || true
-                        exit 1
-                    fi
-
-                    if [ ! -d "${ANSIBLE_DIR}" ]; then
-                        echo "ERROR: Ansible directory ${ANSIBLE_DIR} not found!"
-                        ls -la . || true
-                        exit 1
-                    fi
-
-                    if [ ! -f "${ANSIBLE_DIR}/generated_inventory.sh" ]; then
-                        echo "ERROR: Inventory script ${ANSIBLE_DIR}/generated_inventory.sh not found!"
-                        ls -la ${ANSIBLE_DIR} || true
-                        exit 1
-                    fi
-
-                    echo "All checks passed."
                 '''
             }
         }
 
         stage('Init Terraform') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh 'terraform init'
-                }
+                dir("${TERRAFORM_DIR}") { sh 'terraform init' }
             }
         }
 
@@ -85,34 +56,17 @@ pipeline {
 
         stage('Apply Terraform') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh 'terraform apply -auto-approve tfplan'
-                }
+                dir("${TERRAFORM_DIR}") { sh 'terraform apply -auto-approve tfplan' }
             }
         }
 
-        // FIXED STAGE: Export Terraform Output
         stage('Export Terraform Output') {
             steps {
-                dir("${TERRAFORM_DIR}") { // Make sure you are in the TF dir
+                dir("${TERRAFORM_DIR}") {
                     sh '''
-                        echo "🔧 Exporting Terraform output..."
-                        # Force no color and ensure clean output
-                        TF_CLI_ARGS="-no-color" terraform output -json 2>&1 | tee raw_output.json
-
-                        # Validate and clean the output using jq to ensure it's valid JSON
-                        if jq . raw_output.json > terraform-output.json 2>/dev/null; then
-                            echo "✅ Terraform output successfully exported and validated."
-                            # Move the clean JSON file to the Ansible directory
-                            mv terraform-output.json "${WORKSPACE}/${ANSIBLE_DIR}/"
-                            echo "📄 Contents preview:"
-                            head -20 "${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json"
-                        else
-                            echo "❌ ERROR: Failed to generate valid JSON from terraform output."
-                            echo "Raw output was (first 50 lines):"
-                            head -50 raw_output.json
-                            exit 1
-                        fi
+                        TF_CLI_ARGS="-no-color" terraform output -json > raw_output.json
+                        jq . raw_output.json > terraform-output.json
+                        mv terraform-output.json "${WORKSPACE}/${ANSIBLE_DIR}/"
                     '''
                 }
             }
@@ -120,29 +74,22 @@ pipeline {
 
         stage('Generate Ansible Inventory') {
             steps {
-                 // Ensure we are in the right directory context or use absolute path
-                 // Using absolute path based on WORKSPACE for clarity and correctness
-                 sh '''
-                     chmod +x "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
-                     "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
-                 '''
-                 // Debug: Display the generated inventory
-                 sh 'cat ${WORKSPACE}/${ANSIBLE_DIR}/inventory.ini'
+                sh '''
+                    chmod +x "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
+                    "${WORKSPACE}/${ANSIBLE_DIR}/generated_inventory.sh"
+                    cat "${WORKSPACE}/${ANSIBLE_DIR}/inventory.ini"
+                '''
             }
         }
 
         stage('Ansible Base Setup') {
             steps {
-                dir("${ANSIBLE_DIR}") { 
-                    // Use credentials helper to pass username/password securely
+                dir("${ANSIBLE_DIR}") {
                     withCredentials([usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')]) {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            # Use --extra-vars to pass the password from Jenkins credentials
-                            ansible-playbook \
-                                -i inventory.ini \
-                                playbook-setup.yml \
-                                --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS}"
+                            ansible-playbook -i inventory.ini playbook-setup.yml \
+                                --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" -vvv
                         '''
                     }
                 }
@@ -151,18 +98,15 @@ pipeline {
 
         stage('Ansible Monitoring Stack') {
             steps {
-                dir("${ANSIBLE_DIR}") { 
-                    // Use credentials helper for VM access and Grafana password
+                dir("${ANSIBLE_DIR}") {
                     withCredentials([
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            ansible-playbook \
-                                -i inventory.ini \
-                                playbook-monitoring.yml \
-                                --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}"
+                            ansible-playbook -i inventory.ini playbook-monitoring.yml \
+                                --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
                         '''
                     }
                 }
@@ -171,19 +115,8 @@ pipeline {
     }
 
     post {
-        success {
-            echo '✅ Deployment successful!'
-        }
-        failure {
-            echo '❌ Deployment failed!'
-        }
-        unstable {
-             echo '⚠️ Deployment is unstable (e.g., tests failed).'
-        }
-        // Always clean up the workspace
-        always {
-            cleanWs()
-        }
-        
+        success { echo '✅ Deployment successful!' }
+        failure { echo '❌ Deployment failed!' }
+        always { cleanWs() }
     }
 }

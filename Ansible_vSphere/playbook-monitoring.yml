@@ -1,3 +1,5 @@
+---
+# Monitoring Server Setup Playbook
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   become: true
