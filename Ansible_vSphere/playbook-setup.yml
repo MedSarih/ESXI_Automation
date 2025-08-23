@@ -1,12 +1,10 @@
 ---
-# ==============================
-# Main VM Configuration Playbook
-# ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
   gather_facts: true
   become: yes
   become_method: sudo
+  become_user: root
 
   vars:
     new_user: template
