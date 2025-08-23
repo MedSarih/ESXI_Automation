@@ -70,7 +70,6 @@ pipeline {
                     '''
                 }
             }
-            
         }
 
         stage('Generate Ansible Inventory') {

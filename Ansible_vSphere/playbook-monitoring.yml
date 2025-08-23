@@ -1,4 +1,3 @@
----
 # Monitoring Server Setup Playbook
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
@@ -7,7 +6,6 @@
     ansible_become: true
     ansible_become_method: sudo
     ansible_become_user: root
-    ansible_become_password: ""
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
@@ -28,6 +26,15 @@
           {% for ns in dns_servers %}
           nameserver {{ ns }}
           {% endfor %}
+
+    ###########################################################################
+    # FIX HOSTNAME RESOLUTION ISSUE
+    ###########################################################################
+    - name: Ensure hostname is in /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        state: present
 
     ###########################################################################
     # SYSTEM PREPARATION
