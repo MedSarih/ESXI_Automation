@@ -2,7 +2,7 @@
 # ==============================
 # Main VM Configuration Playbook
 # ==============================
-- name: Configure all VMs (DNS, Users, System, Firewall)
+- name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
   become: true
   vars:
@@ -16,23 +16,14 @@
       - 8.8.4.4
       - 1.0.0.1
   tasks:
-    # ------------------------------
-    # DNS Configuration
-    # ------------------------------
-    - name: Ensure systemd-resolved is installed
-      ansible.builtin.apt:
-        name: systemd-resolved
-        state: present
-        update_cache: yes
-
-    - name: Configure DNS in systemd-resolved
+    # ---------- DNS (systemd-resolved) ----------
+    - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
         block: |
+          [Resolve]
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
-        marker: "# {mark} ANSIBLE MANAGED DNS"
-        backup: yes
       notify: Restart systemd-resolved
 
     - name: Ensure /etc/resolv.conf points to systemd-resolved
@@ -46,9 +37,17 @@
     - name: Flush handlers to apply DNS changes immediately
       ansible.builtin.meta: flush_handlers
 
-    # ------------------------------
-    # System setup
-    # ------------------------------
+    # ---------- Docker DNS fix ----------
+    - name: Configure Docker DNS
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "dns": {{ upstream_dns_servers | to_json }}
+          }
+      notify: Restart Docker
+
+    # ---------- System setup ----------
     - name: Ensure hostname resolves in /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
@@ -72,6 +71,7 @@
           - git
           - htop
           - ufw
+          - docker.io
         state: present
 
     - name: Create sudo user "{{ new_user }}"
@@ -96,5 +96,11 @@
     - name: Restart systemd-resolved
       ansible.builtin.systemd:
         name: systemd-resolved
+        state: restarted
+        enabled: yes
+
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
         state: restarted
         enabled: yes
