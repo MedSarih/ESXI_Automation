@@ -4,8 +4,11 @@
 # ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
+  remote_user: your_user
   become: true
+  become_method: sudo
   vars:
+    ansible_become_password: "{{ sudo_password }}"   # pass via Jenkins secret or extra-vars
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
     timezone: "Africa/Casablanca"
@@ -15,6 +18,7 @@
     fallback_dns_servers:
       - 8.8.4.4
       - 1.0.0.1
+
   tasks:
     # ---------- DNS (systemd-resolved) ----------
     - name: Configure systemd-resolved with DNS
@@ -98,9 +102,13 @@
         name: systemd-resolved
         state: restarted
         enabled: yes
+      become: yes
+      become_method: sudo
 
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
         state: restarted
         enabled: yes
+      become: yes
+      become_method: sudo

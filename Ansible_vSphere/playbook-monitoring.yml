@@ -3,13 +3,17 @@
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
+  remote_user: your_user
   become: true
+  become_method: sudo
   vars:
+    ansible_become_password: "{{ sudo_password }}"
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
     new_user: template
+
   tasks:
     - name: Ensure monitoring directories exist
       ansible.builtin.file:
@@ -69,7 +73,6 @@
         rule: allow
         port: "{{ item }}"
         proto: tcp
-        
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
