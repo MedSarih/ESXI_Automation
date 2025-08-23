@@ -2,6 +2,7 @@
 # ==============================
 # Monitoring Server Playbook
 # ==============================
+
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   gather_facts: true
@@ -84,3 +85,4 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
+
