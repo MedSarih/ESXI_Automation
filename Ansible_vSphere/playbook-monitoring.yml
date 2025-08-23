@@ -1,4 +1,6 @@
-# Monitoring Server Setup Playbook
+# ==============================
+# Monitoring Server Playbook
+# ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
   become: true
@@ -6,138 +8,24 @@
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
-    new_user: template
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
-    # Define upstream DNS servers for systemd-resolved
-    upstream_dns_servers:
-      - 8.8.8.8
-      - 1.1.1.1
-
+    new_user: template
   tasks:
-    ###########################################################################
-    # DNS CONFIGURATION (Fix Internet Access & Hostname Resolution)
-    ###########################################################################
-    - name: Configure systemd-resolved with upstream DNS servers
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/resolved.conf
-        regexp: '^DNS='
-        line: "DNS={{ upstream_dns_servers | join(' ') }}"
-        backup: yes
-        mode: '0644'
-      notify: Restart systemd-resolved
-
-    - name: Ensure systemd-resolved configuration directory exists
-      ansible.builtin.file:
-        path: /etc/systemd/resolved.conf.d
-        state: directory
-        mode: '0755'
-
-    - name: Ensure /etc/resolv.conf points to systemd-resolved
-      ansible.builtin.file:
-        src: /run/systemd/resolve/stub-resolv.conf
-        dest: /etc/resolv.conf
-        state: link
-        force: yes
-      notify: Restart systemd-resolved
-
-    # Ensure hostname resolution for sudo
-    - name: Ensure hostname resolves in /etc/hosts
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        line: "127.0.1.1 {{ ansible_hostname }}"
-        create: yes
-        mode: '0644'
-
-    # Flush handlers to apply DNS changes before package updates
-    - name: Flush handlers to apply DNS changes immediately
-      ansible.builtin.meta: flush_handlers
-
-    ###########################################################################
-    # SYSTEM PREPARATION
-    ###########################################################################
-    - name: Update package cache
-      ansible.builtin.apt:
-        update_cache: yes
-
-    ###########################################################################
-    # DOCKER AND PYTHON SETUP
-    ###########################################################################
-    - name: Install Docker and Python dependencies
-      ansible.builtin.apt:
-        name:
-          - docker.io
-          - python3-pip
-          - python3-dev
-          - python3-setuptools
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg-agent
-          - software-properties-common
-        state: present
-
-    - name: Check if pip3 is available
-      ansible.builtin.command: which pip3
-      register: pip3_check
-      failed_when: false
-      changed_when: false
-
-    - name: Install pip3 using get-pip.py if not available
-      ansible.builtin.shell: |
-        set -e
-        curl -sSfL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-        python3 /tmp/get-pip.py
-        rm -f /tmp/get-pip.py
-      when: pip3_check.rc != 0
-
-    ###########################################################################
-    # DOCKER PYTHON MODULES INSTALLATION
-    ###########################################################################
-    - name: Install Docker Python modules using shell command
-      ansible.builtin.shell: |
-        set -e
-        pip3 install docker docker-compose
-
-    ###########################################################################
-    # DOCKER SERVICE SETUP
-    ###########################################################################
-    - name: Reload systemd daemon
-      ansible.builtin.systemd:
-        daemon_reload: yes
-
-    - name: Start and enable Docker service
-      ansible.builtin.systemd:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Wait for Docker service to be ready (API port)
-      ansible.builtin.wait_for:
-        port: 2375 # Docker API port, often indicates daemon readiness
-        host: localhost
-        delay: 2
-        timeout: 30
-      # Adjust port if needed or use a different check if 2375 isn't exposed/used
-
-    ###########################################################################
-    # PERSISTENT STORAGE SETUP
-    ###########################################################################
-    - name: Create monitoring directories
+    - name: Ensure monitoring directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        owner: "{{ new_user | default('template') }}"
-        group: "{{ new_user | default('template') }}"
+        owner: "{{ new_user }}"
+        group: "{{ new_user }}"
         mode: '0755'
       loop:
         - "{{ monitoring_data_dir }}/prometheus"
         - "{{ monitoring_data_dir }}/grafana"
 
-    ###########################################################################
-    # PROMETHEUS DEPLOYMENT
-    ###########################################################################
-    - name: Pull Prometheus Docker image
-      ansible.builtin.command: docker pull prom/prometheus:v2.45.0
+    - name: Pull Prometheus and Grafana images
+      ansible.builtin.shell: |
+        docker pull prom/prometheus:v2.45.0
+        docker pull grafana/grafana:9.5.6
 
     - name: Create Prometheus configuration
       ansible.builtin.copy:
@@ -148,24 +36,15 @@
             - job_name: 'prometheus'
               static_configs:
                 - targets: ['localhost:9090']
-            - job_name: 'node_exporter'
-              static_configs:
-                - targets: []
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-        owner: "{{ new_user | default('template') }}"
-        group: "{{ new_user | default('template') }}"
+        owner: "{{ new_user }}"
+        group: "{{ new_user }}"
         mode: '0644'
 
     - name: Run Prometheus container
       ansible.builtin.shell: |
-        set -e
-        # Check if container already exists and remove it
-        if docker ps -a --format '{{.Names}}' | grep -q '^prometheus$'; then
-          echo "Removing existing prometheus container..."
-          docker rm -f prometheus
-        fi
-        docker run -d \
-          --name prometheus \
+        docker rm -f prometheus || true
+        docker run -d --name prometheus \
           -p {{ prometheus_port }}:9090 \
           -v {{ monitoring_data_dir }}/prometheus:/prometheus \
           -v {{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
@@ -174,22 +53,10 @@
           --storage.tsdb.path=/prometheus \
           --web.enable-lifecycle
 
-    ###########################################################################
-    # GRAFANA DEPLOYMENT
-    ###########################################################################
-    - name: Pull Grafana Docker image
-      ansible.builtin.command: docker pull grafana/grafana:9.5.6
-
     - name: Run Grafana container
       ansible.builtin.shell: |
-        set -e
-         # Check if container already exists and remove it
-        if docker ps -a --format '{{.Names}}' | grep -q '^grafana$'; then
-          echo "Removing existing grafana container..."
-          docker rm -f grafana
-        fi
-        docker run -d \
-          --name grafana \
+        docker rm -f grafana || true
+        docker run -d --name grafana \
           -p {{ grafana_port }}:3000 \
           -v {{ monitoring_data_dir }}/grafana:/var/lib/grafana \
           -e GF_SECURITY_ADMIN_USER=admin \
@@ -197,10 +64,7 @@
           -e GF_USERS_ALLOW_SIGN_UP=false \
           grafana/grafana:9.5.6
 
-    ###########################################################################
-    # FIREWALL CONFIGURATION
-    ###########################################################################
-    - name: Allow Prometheus and Grafana through firewall
+    - name: Allow Prometheus and Grafana ports through firewall
       ansible.builtin.ufw:
         rule: allow
         port: "{{ item }}"
@@ -208,11 +72,3 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
-
-  # Define handlers for this playbook as well
-  handlers:
-    - name: Restart systemd-resolved
-      ansible.builtin.systemd:
-        name: systemd-resolved
-        state: restarted
-        enabled: yes
