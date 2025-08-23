@@ -9,6 +9,7 @@ nic_type        = "vmxnet3"
 
 
 
+
 vm_configs = {
   app-terraform = {
     cpu           = 4
