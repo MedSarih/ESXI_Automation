@@ -1,3 +1,6 @@
+# ==============================
+# Jenkins Pipeline
+# ==============================
 pipeline {
     agent any
 
@@ -12,9 +15,7 @@ pipeline {
     triggers { githubPush() }
 
     stages {
-        stage('Checkout Code') {
-            steps { checkout scm }
-        }
+        stage('Checkout Code') { steps { checkout scm } }
 
         stage('Validate Environment') {
             steps {
@@ -32,9 +33,7 @@ pipeline {
             }
         }
 
-        stage('Init Terraform') {
-            steps { dir("${TERRAFORM_DIR}") { sh 'terraform init' } }
-        }
+        stage('Init Terraform') { steps { dir("${TERRAFORM_DIR}") { sh 'terraform init' } } }
 
         stage('Plan Terraform') {
             steps {
@@ -48,9 +47,7 @@ pipeline {
             }
         }
 
-        stage('Apply Terraform') {
-            steps { dir("${TERRAFORM_DIR}") { sh 'terraform apply -auto-approve tfplan' } }
-        }
+        stage('Apply Terraform') { steps { dir("${TERRAFORM_DIR}") { sh 'terraform apply -auto-approve tfplan' } } }
 
         stage('Export Terraform Output') {
             steps {
@@ -81,7 +78,7 @@ pipeline {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ansible-playbook -i inventory.ini playbook-setup.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS}" -vvv
                         '''
                     }
                 }
@@ -98,7 +95,7 @@ pipeline {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
                         '''
                     }
                 }
