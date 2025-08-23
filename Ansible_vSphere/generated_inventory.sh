@@ -28,7 +28,7 @@ echo "🔍 Parsing VMs from vm_inventory.value..."
 # Start fresh inventory
 > "$INVENTORY_FILE"
 
-# Add monitoring servers - Correct path: .vm_inventory.value
+# Add monitoring servers
 echo "[monitoring_servers]" >> "$INVENTORY_FILE"
 jq -r '
   .vm_inventory.value
@@ -38,7 +38,7 @@ jq -r '
   | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "ubuntu")"
 ' "$TERRAFORM_OUTPUT" >> "$INVENTORY_FILE" || echo "# No monitoring servers found or error parsing" >> "$INVENTORY_FILE"
 
-# Add application servers - Correct path: .vm_inventory.value
+# Add application servers
 echo "" >> "$INVENTORY_FILE"
 echo "[application_servers]" >> "$INVENTORY_FILE"
 jq -r '
@@ -55,11 +55,14 @@ echo "[all_servers:children]" >> "$INVENTORY_FILE"
 echo "monitoring_servers" >> "$INVENTORY_FILE"
 echo "application_servers" >> "$INVENTORY_FILE"
 
-# Add global variables (using Jenkins variable placeholder)
+# Add global variables
 echo "" >> "$INVENTORY_FILE"
 echo "[all:vars]" >> "$INVENTORY_FILE"
-echo "ansible_ssh_pass = \${ANSIBLE_VM_CREDENTIALS}" >> "$INVENTORY_FILE"
-echo "ansible_ssh_common_args = -o StrictHostKeyChecking=no" >> "$INVENTORY_FILE"
+echo "ansible_ssh_pass=${ANSIBLE_VM_CREDENTIALS}" >> "$INVENTORY_FILE"
+echo "ansible_ssh_common_args=-o StrictHostKeyChecking=no" >> "$INVENTORY_FILE"
+echo "ansible_become=true" >> "$INVENTORY_FILE"
+echo "ansible_become_method=sudo" >> "$INVENTORY_FILE"
+echo "ansible_become_password=''" >> "$INVENTORY_FILE"
 
 # Final check
 if [[ ! -s "$INVENTORY_FILE" ]]; then
@@ -72,4 +75,3 @@ echo "✅ SUCCESS: Inventory generated at $INVENTORY_FILE"
 echo ""
 echo "📄 Final inventory contents:"
 cat "$INVENTORY_FILE"
-echo ""
