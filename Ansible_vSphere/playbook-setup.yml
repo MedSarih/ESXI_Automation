@@ -7,6 +7,7 @@
   gather_facts: true
   become: yes
   become_method: sudo
+
   vars:
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
@@ -98,9 +99,13 @@
         name: systemd-resolved
         state: restarted
         enabled: yes
+      become: yes
+      become_method: sudo
 
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
         state: restarted
         enabled: yes
+      become: yes
+      become_method: sudo
