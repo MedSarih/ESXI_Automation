@@ -68,6 +68,20 @@ pipeline {
             }
         }
 
+        stage('Pre-Setup Passwordless Sudo') {
+            steps {
+                dir("${ANSIBLE_DIR}") {
+                    withCredentials([usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')]) {
+                        sh '''
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            ansible-playbook -i inventory.ini pre-setup-sudo.yml \
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" -vvv
+                        '''
+                    }
+                }
+            }
+        }
+
         stage('Ansible Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -75,7 +89,7 @@ pipeline {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ansible-playbook -i inventory.ini playbook-setup.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" -vvv
                         '''
                     }
                 }
@@ -92,7 +106,7 @@ pipeline {
                         sh '''
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
                         '''
                     }
                 }

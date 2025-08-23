@@ -27,7 +27,7 @@
           [Resolve]
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
-      # notify: Restart systemd-resolved   # Optional, may not be essential
+      notify: Restart systemd-resolved
 
     - name: Ensure /etc/resolv.conf points to systemd-resolved
       ansible.builtin.file:
@@ -35,7 +35,7 @@
         dest: /etc/resolv.conf
         state: link
         force: yes
-      # notify: Restart systemd-resolved   # Optional
+      notify: Restart systemd-resolved
 
     - name: Configure Docker DNS
       ansible.builtin.copy:
@@ -44,7 +44,7 @@
           {
             "dns": {{ upstream_dns_servers | to_json }}
           }
-      # notify: Restart Docker   # Optional
+      notify: Restart Docker
 
     - name: Ensure hostname resolves in /etc/hosts
       ansible.builtin.lineinfile:
@@ -90,16 +90,15 @@
         state: enabled
         policy: deny
 
-# Optional handlers if you want to restart services manually later
-# handlers:
-#   - name: Restart systemd-resolved
-#     ansible.builtin.systemd:
-#       name: systemd-resolved
-#       state: restarted
-#       enabled: yes
-#
-#   - name: Restart Docker
-#     ansible.builtin.systemd:
-#       name: docker
-#       state: restarted
-#       enabled: yes
+  handlers:
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        enabled: yes
+
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+        enabled: yes
