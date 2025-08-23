@@ -1,13 +1,12 @@
+---
 # ==============================
 # Monitoring Server Playbook
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
-  remote_user: your_user
+  gather_facts: true
   become: true
-  become_method: sudo
   vars:
-    ansible_become_password: "{{ sudo_password }}"
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
@@ -27,9 +26,13 @@
         - "{{ monitoring_data_dir }}/grafana"
 
     - name: Pull Prometheus and Grafana images
-      ansible.builtin.shell: |
-        docker pull prom/prometheus:v2.45.0
-        docker pull grafana/grafana:9.5.6
+      community.docker.docker_image:
+        name: "{{ item.name }}"
+        tag: "{{ item.tag }}"
+        source: pull
+      loop:
+        - { name: "prom/prometheus", tag: "v2.45.0" }
+        - { name: "grafana/grafana", tag: "9.5.6" }
 
     - name: Create Prometheus configuration
       ansible.builtin.copy:
@@ -46,30 +49,35 @@
         mode: '0644'
 
     - name: Run Prometheus container
-      ansible.builtin.shell: |
-        docker rm -f prometheus || true
-        docker run -d --name prometheus \
-          -p {{ prometheus_port }}:9090 \
-          -v {{ monitoring_data_dir }}/prometheus:/prometheus \
-          -v {{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
-          prom/prometheus:v2.45.0 \
-          --config.file=/etc/prometheus/prometheus.yml \
-          --storage.tsdb.path=/prometheus \
-          --web.enable-lifecycle
+      community.docker.docker_container:
+        name: prometheus
+        image: prom/prometheus:v2.45.0
+        state: started
+        restart_policy: always
+        ports:
+          - "{{ prometheus_port }}:9090"
+        volumes:
+          - "{{ monitoring_data_dir }}/prometheus:/prometheus"
+          - "{{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+        command: "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
 
     - name: Run Grafana container
-      ansible.builtin.shell: |
-        docker rm -f grafana || true
-        docker run -d --name grafana \
-          -p {{ grafana_port }}:3000 \
-          -v {{ monitoring_data_dir }}/grafana:/var/lib/grafana \
-          -e GF_SECURITY_ADMIN_USER=admin \
-          -e GF_SECURITY_ADMIN_PASSWORD="{{ grafana_admin_password }}" \
-          -e GF_USERS_ALLOW_SIGN_UP=false \
-          grafana/grafana:9.5.6
+      community.docker.docker_container:
+        name: grafana
+        image: grafana/grafana:9.5.6
+        state: started
+        restart_policy: always
+        ports:
+          - "{{ grafana_port }}:3000"
+        env:
+          GF_SECURITY_ADMIN_USER: admin
+          GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+          GF_USERS_ALLOW_SIGN_UP: "false"
+        volumes:
+          - "{{ monitoring_data_dir }}/grafana:/var/lib/grafana"
 
     - name: Allow Prometheus and Grafana ports through firewall
-      ansible.builtin.ufw:
+      community.general.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp

@@ -4,11 +4,9 @@
 # ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
-  remote_user: your_user
+  gather_facts: true
   become: true
-  become_method: sudo
   vars:
-    ansible_become_password: "{{ sudo_password }}"   # pass via Jenkins secret or extra-vars
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
     timezone: "Africa/Casablanca"
@@ -64,7 +62,7 @@
         upgrade: dist
 
     - name: Set system timezone
-      ansible.builtin.timezone:
+      community.general.timezone:
         name: "{{ timezone }}"
 
     - name: Install essential packages
@@ -87,12 +85,12 @@
         create_home: yes
 
     - name: Allow SSH through firewall
-      ansible.builtin.ufw:
+      community.general.ufw:
         rule: allow
         name: OpenSSH
 
     - name: Enable UFW firewall
-      ansible.builtin.ufw:
+      community.general.ufw:
         state: enabled
         policy: deny
 
@@ -102,13 +100,9 @@
         name: systemd-resolved
         state: restarted
         enabled: yes
-      become: yes
-      become_method: sudo
 
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
         state: restarted
         enabled: yes
-      become: yes
-      become_method: sudo
