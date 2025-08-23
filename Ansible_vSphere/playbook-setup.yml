@@ -1,10 +1,12 @@
 ---
+# ==============================
+# Main VM Configuration Playbook
+# ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
   gather_facts: true
   become: yes
   become_method: sudo
-  become_user: root
 
   vars:
     new_user: template
@@ -18,6 +20,22 @@
       - 1.0.0.1
 
   tasks:
+    - name: Ensure Ansible user exists
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        password: "{{ new_user_password }}"
+        groups: sudo
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Allow passwordless sudo for Ansible user
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^{{ new_user }} ALL='
+        line: '{{ new_user }} ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -69,14 +87,6 @@
           - ufw
           - docker.io
         state: present
-
-    - name: Create sudo user "{{ new_user }}"
-      ansible.builtin.user:
-        name: "{{ new_user }}"
-        password: "{{ new_user_password }}"
-        groups: sudo
-        shell: /bin/bash
-        create_home: yes
 
     - name: Allow SSH through firewall
       community.general.ufw:

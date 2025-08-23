@@ -76,7 +76,7 @@ pipeline {
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ANSIBLE_BECOME_TIMEOUT=30
                             ansible-playbook -i inventory.ini playbook-setup.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" -vvv
                         '''
                     }
                 }
@@ -94,7 +94,7 @@ pipeline {
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ANSIBLE_BECOME_TIMEOUT=30
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} ansible_become_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" -vvv
                         '''
                     }
                 }
