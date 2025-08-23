@@ -1,11 +1,9 @@
 ---
-# ==============================
-# Main VM Configuration Playbook
-# ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
   gather_facts: true
-  become: true
+  become: yes
+  become_method: sudo
   vars:
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
@@ -18,7 +16,6 @@
       - 1.0.0.1
 
   tasks:
-    # ---------- DNS (systemd-resolved) ----------
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -39,7 +36,6 @@
     - name: Flush handlers to apply DNS changes immediately
       ansible.builtin.meta: flush_handlers
 
-    # ---------- Docker DNS fix ----------
     - name: Configure Docker DNS
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
@@ -49,7 +45,6 @@
           }
       notify: Restart Docker
 
-    # ---------- System setup ----------
     - name: Ensure hostname resolves in /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
