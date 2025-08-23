@@ -3,51 +3,67 @@
   hosts: monitoring_servers
   become: true
   vars:
-    ansible_become: true
-    ansible_become_method: sudo
-    ansible_become_user: root
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
     new_user: template
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
-    dns_servers:
+    # Define upstream DNS servers for systemd-resolved
+    upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
 
   tasks:
     ###########################################################################
-    # DNS CONFIGURATION (Fix Internet Access)
+    # DNS CONFIGURATION (Fix Internet Access & Hostname Resolution)
     ###########################################################################
-    - name: Configure DNS
-      copy:
-        dest: /etc/resolv.conf
-        content: |
-          {% for ns in dns_servers %}
-          nameserver {{ ns }}
-          {% endfor %}
+    - name: Configure systemd-resolved with upstream DNS servers
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        line: "DNS={{ upstream_dns_servers | join(' ') }}"
+        backup: yes
+        mode: '0644'
+      notify: Restart systemd-resolved
 
-    ###########################################################################
-    # FIX HOSTNAME RESOLUTION ISSUE
-    ###########################################################################
-    - name: Ensure hostname is in /etc/hosts
-      lineinfile:
+    - name: Ensure systemd-resolved configuration directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Ensure /etc/resolv.conf points to systemd-resolved
+      ansible.builtin.file:
+        src: /run/systemd/resolve/stub-resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: yes
+      notify: Restart systemd-resolved
+
+    # Ensure hostname resolution for sudo
+    - name: Ensure hostname resolves in /etc/hosts
+      ansible.builtin.lineinfile:
         path: /etc/hosts
         line: "127.0.1.1 {{ ansible_hostname }}"
-        state: present
+        create: yes
+        mode: '0644'
+
+    # Flush handlers to apply DNS changes before package updates
+    - name: Flush handlers to apply DNS changes immediately
+      ansible.builtin.meta: flush_handlers
 
     ###########################################################################
     # SYSTEM PREPARATION
     ###########################################################################
     - name: Update package cache
-      apt:
+      ansible.builtin.apt:
         update_cache: yes
 
     ###########################################################################
     # DOCKER AND PYTHON SETUP
     ###########################################################################
     - name: Install Docker and Python dependencies
-      apt:
+      ansible.builtin.apt:
         name:
           - docker.io
           - python3-pip
@@ -61,49 +77,53 @@
         state: present
 
     - name: Check if pip3 is available
-      shell: which pip3
+      ansible.builtin.command: which pip3
       register: pip3_check
-      ignore_errors: yes
+      failed_when: false
+      changed_when: false
 
     - name: Install pip3 using get-pip.py if not available
-      shell: |
-        curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-        python3 get-pip.py
+      ansible.builtin.shell: |
+        set -e
+        curl -sSfL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+        python3 /tmp/get-pip.py
+        rm -f /tmp/get-pip.py
       when: pip3_check.rc != 0
-      ignore_errors: yes
 
     ###########################################################################
     # DOCKER PYTHON MODULES INSTALLATION
     ###########################################################################
     - name: Install Docker Python modules using shell command
-      shell: |
+      ansible.builtin.shell: |
+        set -e
         pip3 install docker docker-compose
-      ignore_errors: yes
 
     ###########################################################################
     # DOCKER SERVICE SETUP
     ###########################################################################
     - name: Reload systemd daemon
-      systemd:
+      ansible.builtin.systemd:
         daemon_reload: yes
-      ignore_errors: yes
 
     - name: Start and enable Docker service
-      systemd:
+      ansible.builtin.systemd:
         name: docker
         state: started
         enabled: yes
-      ignore_errors: yes
 
-    - name: Wait for Docker service to start
-      shell: sleep 5
-      when: ansible_check_mode is false
+    - name: Wait for Docker service to be ready (API port)
+      ansible.builtin.wait_for:
+        port: 2375 # Docker API port, often indicates daemon readiness
+        host: localhost
+        delay: 2
+        timeout: 30
+      # Adjust port if needed or use a different check if 2375 isn't exposed/used
 
     ###########################################################################
     # PERSISTENT STORAGE SETUP
     ###########################################################################
     - name: Create monitoring directories
-      file:
+      ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         owner: "{{ new_user | default('template') }}"
@@ -116,12 +136,11 @@
     ###########################################################################
     # PROMETHEUS DEPLOYMENT
     ###########################################################################
-    - name: Pull Prometheus Docker image using shell
-      shell: docker pull prom/prometheus:v2.45.0
-      ignore_errors: yes
+    - name: Pull Prometheus Docker image
+      ansible.builtin.command: docker pull prom/prometheus:v2.45.0
 
     - name: Create Prometheus configuration
-      copy:
+      ansible.builtin.copy:
         content: |
           global:
             scrape_interval: 15s
@@ -137,8 +156,14 @@
         group: "{{ new_user | default('template') }}"
         mode: '0644'
 
-    - name: Run Prometheus container using shell
-      shell: |
+    - name: Run Prometheus container
+      ansible.builtin.shell: |
+        set -e
+        # Check if container already exists and remove it
+        if docker ps -a --format '{{.Names}}' | grep -q '^prometheus$'; then
+          echo "Removing existing prometheus container..."
+          docker rm -f prometheus
+        fi
         docker run -d \
           --name prometheus \
           -p {{ prometheus_port }}:9090 \
@@ -148,17 +173,21 @@
           --config.file=/etc/prometheus/prometheus.yml \
           --storage.tsdb.path=/prometheus \
           --web.enable-lifecycle
-      ignore_errors: yes
 
     ###########################################################################
     # GRAFANA DEPLOYMENT
     ###########################################################################
-    - name: Pull Grafana Docker image using shell
-      shell: docker pull grafana/grafana:9.5.6
-      ignore_errors: yes
+    - name: Pull Grafana Docker image
+      ansible.builtin.command: docker pull grafana/grafana:9.5.6
 
-    - name: Run Grafana container using shell
-      shell: |
+    - name: Run Grafana container
+      ansible.builtin.shell: |
+        set -e
+         # Check if container already exists and remove it
+        if docker ps -a --format '{{.Names}}' | grep -q '^grafana$'; then
+          echo "Removing existing grafana container..."
+          docker rm -f grafana
+        fi
         docker run -d \
           --name grafana \
           -p {{ grafana_port }}:3000 \
@@ -167,17 +196,23 @@
           -e GF_SECURITY_ADMIN_PASSWORD="{{ grafana_admin_password }}" \
           -e GF_USERS_ALLOW_SIGN_UP=false \
           grafana/grafana:9.5.6
-      ignore_errors: yes
 
     ###########################################################################
     # FIREWALL CONFIGURATION
     ###########################################################################
     - name: Allow Prometheus and Grafana through firewall
-      ufw:
+      ansible.builtin.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
-      ignore_errors: yes
+
+  # Define handlers for this playbook as well
+  handlers:
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        enabled: yes

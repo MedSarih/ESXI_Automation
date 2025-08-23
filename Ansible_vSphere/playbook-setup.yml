@@ -3,42 +3,63 @@
   hosts: all
   become: true
   vars:
-    ansible_become: true
-    ansible_become_method: sudo
-    ansible_become_user: root
     new_user: template
     new_user_password: "{{ 'template' | password_hash('sha512') }}"
     timezone: "Africa/Casablanca"
-    dns_servers:
+    # Define upstream DNS servers for systemd-resolved
+    upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
 
   tasks:
     ###########################################################################
-    # DNS CONFIGURATION (Fix Internet Access)
+    # DNS CONFIGURATION (Fix Internet Access & Hostname Resolution)
+    # This block ensures systemd-resolved is properly configured and used.
     ###########################################################################
-    - name: Configure DNS
-      copy:
+    - name: Configure systemd-resolved with upstream DNS servers
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        line: "DNS={{ upstream_dns_servers | join(' ') }}"
+        backup: yes
+        mode: '0644' # Ensure correct permissions
+      notify: Restart systemd-resolved # Use a handler to restart only if changed
+
+    - name: Ensure systemd-resolved configuration directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Ensure /etc/resolv.conf points to systemd-resolved
+      ansible.builtin.file:
+        src: /run/systemd/resolve/stub-resolv.conf
         dest: /etc/resolv.conf
-        content: |
-          {% for ns in dns_servers %}
-          nameserver {{ ns }}
-          {% endfor %}
+        state: link
+        force: yes # Force the link if a file already exists
+      notify: Restart systemd-resolved # Restart after fixing the link if needed
+
+    # Flush handlers here to ensure systemd-resolved is restarted and configured
+    # before proceeding with tasks that need DNS (like apt updates).
+    - name: Flush handlers to apply DNS changes immediately
+      ansible.builtin.meta: flush_handlers
 
     ###########################################################################
-    # FIX HOSTNAME RESOLUTION ISSUE
+    # FIX HOSTNAME RESOLUTION ISSUE (for sudo)
     ###########################################################################
     - name: Ensure hostname is in /etc/hosts
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/hosts
         line: "127.0.1.1 {{ ansible_hostname }}"
         state: present
+        create: yes
+        mode: '0644'
 
     ###########################################################################
     # SYSTEM UPDATES & MAINTENANCE
     ###########################################################################
     - name: Update package cache and upgrade packages
-      apt:
+      ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
 
@@ -46,14 +67,14 @@
     # TIMEZONE CONFIGURATION
     ###########################################################################
     - name: Set system timezone
-      timezone:
+      ansible.builtin.timezone:
         name: "{{ timezone }}"
 
     ###########################################################################
     # ESSENTIAL TOOLS INSTALLATION
     ###########################################################################
     - name: Install essential packages
-      apt:
+      ansible.builtin.apt:
         name:
           - vim
           - curl
@@ -66,7 +87,7 @@
     # USER MANAGEMENT
     ###########################################################################
     - name: Create sudo user "{{ new_user }}"
-      user:
+      ansible.builtin.user:
         name: "{{ new_user }}"
         password: "{{ new_user_password }}"
         groups: sudo
@@ -77,11 +98,19 @@
     # FIREWALL CONFIGURATION
     ###########################################################################
     - name: Allow SSH through firewall
-      ufw:
+      ansible.builtin.ufw:
         rule: allow
         name: OpenSSH
 
     - name: Enable UFW firewall
-      ufw:
+      ansible.builtin.ufw:
         state: enabled
         policy: deny
+
+  # Define handlers to restart services only when necessary
+  handlers:
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        enabled: yes
