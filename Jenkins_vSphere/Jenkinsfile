@@ -154,6 +154,5 @@ pipeline {
         always {
             cleanWs()
         }
-        
     }
 }
