@@ -86,6 +86,7 @@ pipeline {
             }
         }
 
+        // --- Critical Fix Applied in Ansible Stages ---
         stage('Ansible Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -93,17 +94,19 @@ pipeline {
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')
                     ]) {
                         sh '''
-                            # Set Ansible environment variables
+                            # Set core Ansible environment variables for stability and correct become behavior
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
+                            # Explicitly define become flags to prevent TTY issues (key fix)
+                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
-                            # Run base configuration playbook
+                            # Run the base configuration playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              -e 'ansible_become_flags="-H -S -n"' \\
-                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
-                              -e 'ansible_become_exe="sudo -n"' \\
+                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\ # Prevent stale SSH connections
+                              -e 'ansible_become_method=sudo' \\                 # Explicitly state become method
+                              -e 'ansible_become_exe=sudo -n' \\                 # Force sudo -n execution (key fix)
                               -vvv
                         '''
                     }
@@ -119,23 +122,26 @@ pipeline {
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
                         sh '''
-                            # Set Ansible environment variables
+                            # Set core Ansible environment variables for stability and correct become behavior
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
+                            # Explicitly define become flags to prevent TTY issues (key fix)
+                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
-                            # Run monitoring stack playbook
+                            # Run the monitoring stack playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              -e 'ansible_become_flags="-H -S -n"' \\
-                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
-                              -e 'ansible_become_exe="sudo -n"' \\
+                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\ # Prevent stale SSH connections
+                              -e 'ansible_become_method=sudo' \\                 # Explicitly state become method
+                              -e 'ansible_become_exe=sudo -n' \\                 # Force sudo -n execution (key fix)
                               -vvv
                         '''
                     }
                 }
             }
         }
+        // --- End of Critical Fixes ---
     }
 
     post {
@@ -144,9 +150,11 @@ pipeline {
         }
         failure {
             echo '❌ Deployment failed!'
+            // Consider adding more detailed failure reporting here if needed
+            // e.g., archive logs, send notifications
         }
         always {
-            cleanWs()
+            cleanWs() // Clean up the workspace after the run
         }
     }
 }
