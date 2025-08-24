@@ -4,14 +4,19 @@
 # ==============================
 - name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
-  gather_facts: true
+  gather_facts: yes
   become: yes
   become_method: sudo
+  become_user: root
 
   vars:
+    # The user already exists in your VM template
     new_user: template
-    new_user_password: "{{ 'template' | password_hash('sha512') }}"
+
+    # Timezone
     timezone: "Africa/Casablanca"
+
+    # DNS servers
     upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
@@ -19,22 +24,26 @@
       - 8.8.4.4
       - 1.0.0.1
 
-  tasks:
-    - name: Ensure Ansible user exists
-      ansible.builtin.user:
-        name: "{{ new_user }}"
-        password: "{{ new_user_password }}"
-        groups: sudo
-        shell: /bin/bash
-        create_home: yes
+  pre_tasks:
+    - name: Ensure sudo is working (test become)
+      ansible.builtin.command: whoami
+      register: test_sudo
+      changed_when: false
 
+    - name: Debug - Confirm we became root
+      ansible.builtin.debug:
+        msg: "Running as user: {{ test_sudo.stdout }}"
+
+  tasks:
     - name: Allow passwordless sudo for Ansible user
       ansible.builtin.lineinfile:
-        path: /etc/sudoers
-        state: present
-        regexp: '^{{ new_user }} ALL='
+        path: /etc/sudoers.d/{{ new_user }}
         line: '{{ new_user }} ALL=(ALL) NOPASSWD:ALL'
+        owner: root
+        group: root
+        mode: '0440'
         validate: 'visudo -cf %s'
+      # Using a dedicated file in /etc/sudoers.d/ is safer than editing /etc/sudoers
 
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
@@ -43,6 +52,9 @@
           [Resolve]
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
+          # Always use local stub resolver
+          DNSStubListener=yes
+        backup: yes
       notify: Restart systemd-resolved
 
     - name: Ensure /etc/resolv.conf points to systemd-resolved
@@ -60,6 +72,9 @@
           {
             "dns": {{ upstream_dns_servers | to_json }}
           }
+        owner: root
+        group: root
+        mode: '0644'
       notify: Restart Docker
 
     - name: Ensure hostname resolves in /etc/hosts
@@ -67,11 +82,13 @@
         path: /etc/hosts
         line: "127.0.1.1 {{ ansible_hostname }}"
         create: yes
+        backup: yes
 
     - name: Update package cache and upgrade packages
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
+        cache_valid_time: 3600
 
     - name: Set system timezone
       community.general.timezone:
@@ -87,6 +104,7 @@
           - ufw
           - docker.io
         state: present
+        install_recommends: no
 
     - name: Allow SSH through firewall
       community.general.ufw:
