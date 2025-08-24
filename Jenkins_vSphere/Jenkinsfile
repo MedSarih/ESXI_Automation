@@ -104,16 +104,15 @@ pipeline {
                             # Run the base configuration playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\ # Prevent stale SSH connections
-                              -e 'ansible_become_method=sudo' \\                 # Explicitly state become method
-                              -e 'ansible_become_exe=sudo -n' \\                 # Force sudo -n execution (key fix)
+                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
+                              -e 'ansible_become_method=sudo' \\
+                              -e 'ansible_become_exe=sudo -n' \\
                               -vvv
                         '''
                     }
                 }
             }
         }
-
 
         stage('Ansible Monitoring Stack') {
             steps {
@@ -133,9 +132,9 @@ pipeline {
                             # Run the monitoring stack playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\ # Prevent stale SSH connections
-                              -e 'ansible_become_method=sudo' \\                 # Explicitly state become method
-                              -e 'ansible_become_exe=sudo -n' \\                 # Force sudo -n execution (key fix)
+                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
+                              -e 'ansible_become_method=sudo' \\
+                              -e 'ansible_become_exe=sudo -n' \\
                               -vvv
                         '''
                     }
