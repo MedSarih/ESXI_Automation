@@ -98,13 +98,12 @@ pipeline {
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
-                            # Explicitly define become flags to prevent TTY issues (key fix)
                             export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
                             # Run the base configuration playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
+                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\
                               -e 'ansible_become_method=sudo' \\
                               -e 'ansible_become_exe=sudo -n' \\
                               -vvv
@@ -126,13 +125,12 @@ pipeline {
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
-                            # Explicitly define become flags to prevent TTY issues (key fix)
                             export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
                             # Run the monitoring stack playbook with specific overrides
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
+                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\
                               -e 'ansible_become_method=sudo' \\
                               -e 'ansible_become_exe=sudo -n' \\
                               -vvv
@@ -150,11 +148,9 @@ pipeline {
         }
         failure {
             echo '❌ Deployment failed!'
-            // Consider adding more detailed failure reporting here if needed
-            // e.g., archive logs, send notifications
         }
         always {
-            cleanWs() // Clean up the workspace after the run
+            cleanWs()
         }
     }
 }

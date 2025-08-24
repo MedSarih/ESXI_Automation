@@ -2,7 +2,7 @@
 # ==============================
 # Main VM Configuration Playbook
 # ==============================
-- name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
+- name: Configure all VMs (DNS, System, Firewall, Docker DNS)
   hosts: all
   gather_facts: yes
   become: yes
@@ -10,7 +10,8 @@
   become_user: root
 
   vars:
-    new_user: template
+    # Assumes 'template' user exists with NOPASSWD sudo in VM template
+    # new_user: template # Not used anymore as we don't recreate the user
     timezone: "Africa/Casablanca"
 
     upstream_dns_servers:
@@ -21,15 +22,9 @@
       - 1.0.0.1
 
   tasks:
-    # ✅ Ensure passwordless sudo via /etc/sudoers.d (safe & standard)
-    - name: Allow passwordless sudo for Ansible user
-      ansible.builtin.copy:
-        content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\n"
-        dest: "/etc/sudoers.d/{{ new_user }}"
-        owner: root
-        group: root
-        mode: '0440'
-        validate: 'visudo -cf %s'
+    # --- Removed: Task to create/manage 'template' user ---
+    # The user is assumed to exist correctly in the VM template.
+    # Re-asserting sudo rights here could conflict or be unnecessary.
 
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
