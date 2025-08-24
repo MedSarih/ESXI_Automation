@@ -63,6 +63,62 @@
         enabled: yes
       tags: dns
 
+    # 🧪 COMPREHENSIVE DNS DIAGNOSTICS
+    - name: Check systemd-resolved status
+      ansible.builtin.command: systemctl status systemd-resolved
+      changed_when: false
+      register: resolved_status
+      failed_when: false
+      tags: dns
+
+    - name: Display systemd-resolved status
+      ansible.builtin.debug:
+        msg: |
+          systemd-resolved status:
+          {{ resolved_status.stdout_lines | join('\n') }}
+      tags: dns
+
+    - name: Check resolved configuration
+      ansible.builtin.command: cat /etc/systemd/resolved.conf
+      changed_when: false
+      register: resolved_conf
+      tags: dns
+
+    - name: Display resolved configuration
+      ansible.builtin.debug:
+        msg: |
+          /etc/systemd/resolved.conf:
+          {{ resolved_conf.stdout_lines | join('\n') }}
+      tags: dns
+
+    - name: Test direct connection to upstream DNS servers
+      ansible.builtin.command: timeout 5 bash -c "echo > /dev/tcp/{{ item }}/53"
+      changed_when: false
+      register: direct_dns_test
+      failed_when: false
+      loop: "{{ upstream_dns_servers }}"
+      tags: dns
+
+    - name: Display direct DNS connectivity results
+      ansible.builtin.debug:
+        msg: "Direct DNS connectivity to {{ item.item }}:53: {{ 'SUCCESS' if item.rc == 0 else 'FAILED' }}"
+      loop: "{{ direct_dns_test.results }}"
+      tags: dns
+
+    - name: Check systemd-resolve status and DNS servers
+      ansible.builtin.command: systemd-resolve --status
+      changed_when: false
+      register: resolve_status
+      failed_when: false
+      tags: dns
+
+    - name: Display systemd-resolve status
+      ansible.builtin.debug:
+        msg: |
+          systemd-resolve --status:
+          {{ resolve_status.stdout_lines | join('\n') }}
+      tags: dns
+
     # 🧪 TEST DNS WITH TIMEOUT
     - name: Test DNS resolution with timeout
       ansible.builtin.command: timeout 10 nslookup google.com
@@ -78,7 +134,40 @@
           {{ dns_test.stdout_lines | join('\n') if dns_test.stdout_lines else dns_test.stderr_lines | join('\n') }}
       tags: dns
 
-    # ✅ INSTALL PACKAGES
+    # 🛠️ FALLBACK: Traditional DNS if systemd-resolved fails
+    - name: Fallback - Configure traditional DNS in /etc/resolv.conf
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          {% for dns in upstream_dns_servers %}
+          nameserver {{ dns }}
+          {% endfor %}
+          {% for dns in fallback_dns_servers %}
+          nameserver {{ dns }}
+          {% endfor %}
+        owner: root
+        group: root
+        mode: '0644'
+      when: dns_test.rc != 0
+      tags: dns
+
+    - name: Test DNS again with fallback configuration
+      ansible.builtin.command: timeout 10 nslookup google.com
+      changed_when: false
+      register: dns_test_fallback
+      failed_when: false
+      when: dns_test.rc != 0
+      tags: dns
+
+    - name: Display fallback DNS test results
+      ansible.builtin.debug:
+        msg: |
+          Fallback DNS Test {{ 'SUCCESS' if dns_test_fallback.rc == 0 else 'STILL FAILED' }}
+          {{ dns_test_fallback.stdout_lines | join('\n') if dns_test_fallback.stdout_lines else dns_test_fallback.stderr_lines | join('\n') }}
+      when: dns_test.rc != 0
+      tags: dns
+
+    # ✅ INSTALL PACKAGES (Continue even if DNS test failed)
     - name: Update package cache and upgrade packages
       ansible.builtin.apt:
         update_cache: yes
