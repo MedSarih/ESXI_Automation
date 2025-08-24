@@ -18,14 +18,15 @@
       - 1.0.0.1
 
   tasks:
-    # ✅ MOVE THIS TO THE VERY BEGINNING to fix DNS warning
-    - name: Ensure hostname resolves in /etc/hosts (FIRST)
+    # ✅ FIRST: Fix hostname resolution to prevent sudo warnings
+    - name: Ensure hostname resolves in /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
         line: "127.0.1.1 {{ ansible_hostname }}"
         create: yes
         backup: yes
 
+    # ✅ SECOND: Configure system DNS immediately
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -45,6 +46,40 @@
         force: yes
       notify: Restart systemd-resolved
 
+    # ✅ THIRD: Force restart DNS services NOW (don't wait for handlers)
+    - name: Restart systemd-resolved to apply DNS settings
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        enabled: yes
+
+    # ✅ FOURTH: Test DNS is working
+    - name: Test DNS resolution
+      ansible.builtin.command: nslookup google.com
+      changed_when: false
+      register: dns_test
+      failed_when: dns_test.rc != 0
+
+    # ✅ FIFTH: Now install packages (DNS should work)
+    - name: Update package cache and upgrade packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Install essential packages including Docker
+      ansible.builtin.apt:
+        name:
+          - vim
+          - curl
+          - git
+          - htop
+          - ufw
+          - docker.io
+        state: present
+        install_recommends: no
+
+    # ✅ SIXTH: Configure Docker DNS (directory now exists)
     - name: Configure Docker DNS
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
@@ -57,27 +92,9 @@
         mode: '0644'
       notify: Restart Docker
 
-    - name: Update package cache and upgrade packages
-      ansible.builtin.apt:
-        update_cache: yes
-        upgrade: dist
-        cache_valid_time: 3600
-
     - name: Set system timezone
       community.general.timezone:
         name: "{{ timezone }}"
-
-    - name: Install essential packages
-      ansible.builtin.apt:
-        name:
-          - vim
-          - curl
-          - git
-          - htop
-          - ufw
-          - docker.io
-        state: present
-        install_recommends: no
 
     - name: Allow SSH through firewall
       community.general.ufw:
