@@ -94,22 +94,20 @@ pipeline {
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')
                     ]) {
                         sh '''
-                            echo "=== Setting Ansible Environment ==="
+                            # Set core Ansible environment variables for stability and correct become behavior
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            export ANSIBLE_BECOME_TIMEOUT=60
-                            export ANSIBLE_TIMEOUT=60
-                            export ANSIBLE_STDOUT_CALLBACK=yaml
-                            export ANSIBLE_FORCE_COLOR=true
+                            export ANSIBLE_BECOME_TIMEOUT=30
+                            export ANSIBLE_TIMEOUT=30
+                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
-                            echo "=== Running Base Configuration Playbook ==="
+                            # Run the base configuration playbook with specific overrides
+                            # Use --ssh-common-args to avoid SSH option parsing issues
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER}" \\
-                              --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              --extra-vars "ansible_become_pass=${ANSIBLE_PASS}" \\
-                              --extra-vars "ansible_become_method=sudo" \\
-                              --ssh-common-args="-o StrictHostKeyChecking=no -o ControlMaster=no -o ControlPersist=no" \\
-                              --become \\
-                              -v
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
+                              --ssh-common-args="-o ControlMaster=no" \\
+                              -e 'ansible_become_method=sudo' \\
+                              -e 'ansible_become_exe=sudo -n' \\
+                              -vvv
                         '''
                     }
                 }
