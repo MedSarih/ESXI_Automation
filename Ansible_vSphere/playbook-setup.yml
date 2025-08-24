@@ -23,17 +23,16 @@
       ansible.builtin.ping:
       tags: always
 
-    # 🔧 CRITICAL: Setup passwordless sudo FIRST
+    # 🔧 FIXED: Proper sudoers content without literal \n
     - name: Setup passwordless sudo for current user
       ansible.builtin.copy:
-        content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\\n"
+        content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\n"
         dest: "/etc/sudoers.d/{{ new_user }}"
         owner: root
         group: root
         mode: '0440'
         validate: 'visudo -cf %s'
       tags: ['always', 'sudo']
-      # This task will use the password provided via ansible_become_pass
 
     - name: Verify passwordless sudo works
       ansible.builtin.command: whoami
@@ -44,7 +43,6 @@
       tags: ['always', 'sudo']
 
   tasks:
-    # Now all subsequent tasks can use passwordless sudo
     - name: Update package cache
       ansible.builtin.apt:
         update_cache: yes
