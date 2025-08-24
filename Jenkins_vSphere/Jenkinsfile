@@ -102,6 +102,7 @@ pipeline {
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
                               -e 'ansible_become_flags="-H -S -n"' \\
+                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
                               -vvv
                         '''
                     }
@@ -126,6 +127,7 @@ pipeline {
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
                               -e 'ansible_become_flags="-H -S -n"' \\
+                              -e 'ansible_ssh_common_args="-o ControlMaster=no"' \\
                               -vvv
                         '''
                     }
