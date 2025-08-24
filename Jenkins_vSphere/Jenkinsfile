@@ -114,6 +114,7 @@ pipeline {
             }
         }
 
+
         stage('Ansible Monitoring Stack') {
             steps {
                 dir("${ANSIBLE_DIR}") {
