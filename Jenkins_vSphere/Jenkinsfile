@@ -98,7 +98,7 @@ pipeline {
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
 
-                            # Run Ansible playbook
+                            # Run base configuration playbook
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
                               -vvv
@@ -121,7 +121,7 @@ pipeline {
                             export ANSIBLE_BECOME_TIMEOUT=30
                             export ANSIBLE_TIMEOUT=30
 
-                            # Run monitoring playbook
+                            # Run monitoring stack playbook
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
                               -vvv
@@ -142,7 +142,5 @@ pipeline {
         always {
             cleanWs()
         }
-
-
     }
 }
