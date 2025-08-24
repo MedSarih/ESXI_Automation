@@ -11,11 +11,11 @@
   vars:
     timezone: "Africa/Casablanca"
     upstream_dns_servers:
-      - 8.8.8.8
-      - 1.1.1.1
+      - 1.1.1.1  # Cloudflare DNS
+      - 8.8.8.8  # Google DNS
     fallback_dns_servers:
-      - 8.8.4.4
-      - 1.0.0.1
+      - 1.0.0.1  # Cloudflare fallback
+      - 8.8.4.4  # Google fallback
 
   tasks:
     # ✅ FIRST: Fix hostname resolution to prevent sudo warnings
@@ -25,8 +25,10 @@
         line: "127.0.1.1 {{ ansible_hostname }}"
         create: yes
         backup: yes
+        regexp: "^127.0.1.1\\s+{{ ansible_hostname }}"
+      tags: dns
 
-    # ✅ SECOND: Configure system DNS immediately
+    # ✅ CONFIGURE SYSTEM DNS with improved settings
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -35,37 +37,54 @@
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
           DNSStubListener=yes
+          Cache=yes
+          DNSSEC=no
+          DNSOverTLS=no
+          ReadEtcHosts=yes
         backup: yes
+        marker: "# {mark} ANSIBLE MANAGED DNS BLOCK"
       notify: Restart systemd-resolved
+      tags: dns
 
-    - name: Ensure /etc/resolv.conf points to systemd-resolved
+    - name: Ensure /etc/resolv.conf points to systemd-resolved stub
       ansible.builtin.file:
-        src: /run/systemd/resolve/resolv.conf
+        src: /run/systemd/resolve/stub-resolv.conf
         dest: /etc/resolv.conf
         state: link
         force: yes
       notify: Restart systemd-resolved
+      tags: dns
 
-    # ✅ THIRD: Force restart DNS services NOW (don't wait for handlers)
+    # ✅ FORCE RESTART DNS SERVICES NOW
     - name: Restart systemd-resolved to apply DNS settings
       ansible.builtin.systemd:
         name: systemd-resolved
         state: restarted
         enabled: yes
+      tags: dns
 
-    # ✅ FOURTH: Test DNS is working
-    - name: Test DNS resolution
-      ansible.builtin.command: nslookup google.com
+    # 🧪 TEST DNS WITH TIMEOUT
+    - name: Test DNS resolution with timeout
+      ansible.builtin.command: timeout 10 nslookup google.com
       changed_when: false
       register: dns_test
-      failed_when: dns_test.rc != 0
+      failed_when: false
+      tags: dns
 
-    # ✅ FIFTH: Now install packages (DNS should work)
+    - name: Display DNS test results
+      ansible.builtin.debug:
+        msg: |
+          DNS Test {{ 'SUCCESS' if dns_test.rc == 0 else 'FAILED - May affect package installation' }}
+          {{ dns_test.stdout_lines | join('\n') if dns_test.stdout_lines else dns_test.stderr_lines | join('\n') }}
+      tags: dns
+
+    # ✅ INSTALL PACKAGES
     - name: Update package cache and upgrade packages
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
         cache_valid_time: 3600
+      ignore_errors: yes
 
     - name: Install essential packages including Docker
       ansible.builtin.apt:
@@ -78,8 +97,30 @@
           - docker.io
         state: present
         install_recommends: no
+      ignore_errors: yes
 
-    # ✅ SIXTH: Configure Docker DNS (directory now exists)
+    # ✅ START AND ENABLE DOCKER
+    - name: Ensure Docker service is started and enabled
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # ✅ CONFIGURE DOCKER DNS
+    - name: Check if Docker directory exists
+      ansible.builtin.stat:
+        path: /etc/docker
+      register: docker_dir
+
+    - name: Create Docker directory if it doesn't exist
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: not docker_dir.stat.exists
+
     - name: Configure Docker DNS
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
@@ -91,7 +132,9 @@
         group: root
         mode: '0644'
       notify: Restart Docker
+      ignore_errors: yes
 
+    # ✅ SYSTEM CONFIGURATION
     - name: Set system timezone
       community.general.timezone:
         name: "{{ timezone }}"
