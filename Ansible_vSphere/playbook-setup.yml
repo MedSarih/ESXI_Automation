@@ -7,13 +7,9 @@
   gather_facts: yes
   become: yes
   become_method: sudo
-  become_user: root
 
   vars:
-    # Assumes 'template' user exists with NOPASSWD sudo in VM template
-    # new_user: template # Not used anymore as we don't recreate the user
     timezone: "Africa/Casablanca"
-
     upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
@@ -22,10 +18,6 @@
       - 1.0.0.1
 
   tasks:
-    # --- Removed: Task to create/manage 'template' user ---
-    # The user is assumed to exist correctly in the VM template.
-    # Re-asserting sudo rights here could conflict or be unnecessary.
-
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf

@@ -86,7 +86,6 @@ pipeline {
             }
         }
 
-        // --- Critical Fix Applied in Ansible Stages ---
         stage('Ansible Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -94,19 +93,17 @@ pipeline {
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')
                     ]) {
                         sh '''
-                            # Set core Ansible environment variables for stability and correct become behavior
+                            # Simplified Ansible environment variables
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            export ANSIBLE_BECOME_TIMEOUT=30
-                            export ANSIBLE_TIMEOUT=30
-                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
+                            export ANSIBLE_BECOME_TIMEOUT=60
+                            export ANSIBLE_TIMEOUT=60
+                            export ANSIBLE_BECOME_METHOD=sudo
+                            export ANSIBLE_BECOME_FLAGS=""
 
-                            # Run the base configuration playbook with specific overrides
-                            # Use --ssh-common-args to avoid SSH option parsing issues
+                            # Run the base configuration playbook
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              --ssh-common-args="-o ControlMaster=no" \\
-                              -e 'ansible_become_method=sudo' \\
-                              -e 'ansible_become_exe=sudo -n' \\
+                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" \\
                               -vvv
                         '''
                     }
@@ -122,26 +119,23 @@ pipeline {
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
                         sh '''
-                            # Set core Ansible environment variables for stability and correct become behavior
+                            # Simplified Ansible environment variables
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            export ANSIBLE_BECOME_TIMEOUT=30
-                            export ANSIBLE_TIMEOUT=30
-                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
+                            export ANSIBLE_BECOME_TIMEOUT=60
+                            export ANSIBLE_TIMEOUT=60
+                            export ANSIBLE_BECOME_METHOD=sudo
+                            export ANSIBLE_BECOME_FLAGS=""
 
-                            # Run the monitoring stack playbook with specific overrides
-                            # Use --ssh-common-args to avoid SSH option parsing issues
+                            # Run the monitoring stack playbook
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              --ssh-common-args="-o ControlMaster=no" \\
-                              -e 'ansible_become_method=sudo' \\
-                              -e 'ansible_become_exe=sudo -n' \\
+                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" \\
                               -vvv
                         '''
                     }
                 }
             }
         }
-        // --- End of Critical Fixes ---
     }
 
     post {
@@ -154,6 +148,5 @@ pipeline {
         always {
             cleanWs()
         }
-        
     }
 }

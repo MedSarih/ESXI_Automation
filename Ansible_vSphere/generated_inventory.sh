@@ -35,7 +35,7 @@ jq -r '
   | to_entries[]
   | select(.value | type == "object")
   | select(.value.role == "monitoring")
-  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "ubuntu")"
+  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "template")"
 ' "$TERRAFORM_OUTPUT" >> "$INVENTORY_FILE" || echo "# No monitoring servers found or error parsing" >> "$INVENTORY_FILE"
 
 # Add application servers
@@ -46,7 +46,7 @@ jq -r '
   | to_entries[]
   | select(.value | type == "object")
   | select(.value.role == "application")
-  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "ubuntu")"
+  | "\(.value.name) ansible_host=\(.value.ip) ansible_user=\(.value.ansible_user // "template")"
 ' "$TERRAFORM_OUTPUT" >> "$INVENTORY_FILE" || echo "# No application servers found or error parsing" >> "$INVENTORY_FILE"
 
 # Add all_servers group
@@ -55,10 +55,9 @@ echo "[all_servers:children]" >> "$INVENTORY_FILE"
 echo "monitoring_servers" >> "$INVENTORY_FILE"
 echo "application_servers" >> "$INVENTORY_FILE"
 
-# Add global variables
+# Add global variables (removed ansible_ssh_pass for security)
 echo "" >> "$INVENTORY_FILE"
 echo "[all:vars]" >> "$INVENTORY_FILE"
-echo "ansible_ssh_pass=${ANSIBLE_VM_CREDENTIALS}" >> "$INVENTORY_FILE"
 echo "ansible_ssh_common_args=-o StrictHostKeyChecking=no" >> "$INVENTORY_FILE"
 echo "ansible_become=true" >> "$INVENTORY_FILE"
 echo "ansible_become_method=sudo" >> "$INVENTORY_FILE"
