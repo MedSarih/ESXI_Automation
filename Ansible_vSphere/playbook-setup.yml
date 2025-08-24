@@ -18,6 +18,14 @@
       - 1.0.0.1
 
   tasks:
+    # ✅ MOVE THIS TO THE VERY BEGINNING to fix DNS warning
+    - name: Ensure hostname resolves in /etc/hosts (FIRST)
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        create: yes
+        backup: yes
+
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -48,13 +56,6 @@
         group: root
         mode: '0644'
       notify: Restart Docker
-
-    - name: Ensure hostname resolves in /etc/hosts
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        line: "127.0.1.1 {{ ansible_hostname }}"
-        create: yes
-        backup: yes
 
     - name: Update package cache and upgrade packages
       ansible.builtin.apt:
