@@ -10,13 +10,9 @@
   become_user: root
 
   vars:
-    # The user already exists in your VM template
     new_user: template
-
-    # Timezone
     timezone: "Africa/Casablanca"
 
-    # DNS servers
     upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
@@ -24,26 +20,16 @@
       - 8.8.4.4
       - 1.0.0.1
 
-  pre_tasks:
-    - name: Ensure sudo is working (test become)
-      ansible.builtin.command: whoami
-      register: test_sudo
-      changed_when: false
-
-    - name: Debug - Confirm we became root
-      ansible.builtin.debug:
-        msg: "Running as user: {{ test_sudo.stdout }}"
-
   tasks:
+    # ✅ Ensure passwordless sudo via /etc/sudoers.d (safe & standard)
     - name: Allow passwordless sudo for Ansible user
-      ansible.builtin.lineinfile:
-        path: /etc/sudoers.d/{{ new_user }}
-        line: '{{ new_user }} ALL=(ALL) NOPASSWD:ALL'
+      ansible.builtin.copy:
+        content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        dest: "/etc/sudoers.d/{{ new_user }}"
         owner: root
         group: root
         mode: '0440'
         validate: 'visudo -cf %s'
-      # Using a dedicated file in /etc/sudoers.d/ is safer than editing /etc/sudoers
 
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
@@ -52,7 +38,6 @@
           [Resolve]
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
-          # Always use local stub resolver
           DNSStubListener=yes
         backup: yes
       notify: Restart systemd-resolved
