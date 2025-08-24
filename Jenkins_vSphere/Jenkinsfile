@@ -101,9 +101,10 @@ pipeline {
                             export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
                             # Run the base configuration playbook with specific overrides
+                            # Use --ssh-common-args to avoid SSH option parsing issues
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\
+                              --ssh-common-args="-o ControlMaster=no" \\
                               -e 'ansible_become_method=sudo' \\
                               -e 'ansible_become_exe=sudo -n' \\
                               -vvv
@@ -128,9 +129,10 @@ pipeline {
                             export ANSIBLE_BECOME_FLAGS="-H -S -n"
 
                             # Run the monitoring stack playbook with specific overrides
+                            # Use --ssh-common-args to avoid SSH option parsing issues
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              -e 'ansible_ssh_common_args=-o ControlMaster=no' \\
+                              --ssh-common-args="-o ControlMaster=no" \\
                               -e 'ansible_become_method=sudo' \\
                               -e 'ansible_become_exe=sudo -n' \\
                               -vvv
