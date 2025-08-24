@@ -1,16 +1,19 @@
 ---
-- name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS) - OPTIMIZED
+# ==============================
+# Main VM Configuration Playbook
+# ==============================
+- name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS)
   hosts: all
   gather_facts: yes
   become: yes
   become_method: sudo
   become_user: root
-  serial: "{{ ansible_serial | default(5) }}"  # Increased parallelism
-  
+  serial: "{{ ansible_serial | default(3) }}"
+
   vars:
     new_user: "{{ ansible_ssh_user | default('template') }}"
     timezone: "Africa/Casablanca"
-    
+
     upstream_dns_servers:
       - 8.8.8.8
       - 1.1.1.1
@@ -23,15 +26,21 @@
       ansible.builtin.ping:
       tags: always
 
+    # 🔧 CRITICAL: Setup passwordless sudo FIRST
+    # --- FIXED: Use literal block scalar for content ---
     - name: Setup passwordless sudo for current user
       ansible.builtin.copy:
-        content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        # Use literal block scalar (|) for clean, multi-line content
+        content: |
+          {{ new_user }} ALL=(ALL) NOPASSWD:ALL
         dest: "/etc/sudoers.d/{{ new_user }}"
         owner: root
         group: root
         mode: '0440'
+        # Validate the sudoers file syntax
         validate: 'visudo -cf %s'
       tags: ['always', 'sudo']
+      # This task uses the password provided via ansible_become_pass
 
     - name: Verify passwordless sudo works
       ansible.builtin.command: whoami
@@ -42,8 +51,14 @@
       tags: ['always', 'sudo']
 
   tasks:
-    # OPTIMIZATION 1: Combined package operations
-    - name: Update package cache and install essential packages
+    # Now all subsequent tasks can use passwordless sudo
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: packages
+
+    - name: Install essential packages
       ansible.builtin.apt:
         name:
           - vim
@@ -55,161 +70,147 @@
           - docker-compose
           - systemd-resolved
         state: present
-        update_cache: yes
-        cache_valid_time: 3600
         install_recommends: no
-        upgrade: dist  # Combined upgrade operation
+      tags: packages
+
+    - name: Set system timezone
+      community.general.timezone:
+        name: "{{ timezone }}"
+      tags: system
+
+    - name: Ensure hostname resolves in /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        create: yes
+        backup: yes
+      tags: dns
+
+    - name: Configure systemd-resolved with DNS
+      ansible.builtin.blockinfile:
+        path: /etc/systemd/resolved.conf
+        block: |
+          [Resolve]
+          DNS={{ upstream_dns_servers | join(' ') }}
+          FallbackDNS={{ fallback_dns_servers | join(' ') }}
+          DNSStubListener=yes
+          Cache=yes
+          DNSOverTLS=no
+        backup: yes
+        marker: "# {mark} ANSIBLE MANAGED DNS BLOCK"
+      notify: Restart systemd-resolved
+      tags: dns
+
+    - name: Ensure /etc/resolv.conf points to systemd-resolved
+      ansible.builtin.file:
+        src: /run/systemd/resolve/stub-resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: yes
+      notify: Restart systemd-resolved
+      tags: dns
+
+    - name: Create Docker daemon configuration directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: docker
+
+    - name: Configure Docker DNS
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "dns": {{ upstream_dns_servers | to_json }},
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "10m",
+              "max-file": "3"
+            }
+          }
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Docker
+      tags: docker
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: docker
+        append: yes
+      tags: docker
+
+    - name: Configure UFW - Allow SSH
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+      tags: firewall
+
+    - name: Configure UFW - Allow monitoring ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "3000"  # Grafana
+        - "9090"  # Prometheus
+        - "9093"  # Alertmanager
+      tags: firewall
+
+    - name: Enable UFW firewall
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+      tags: firewall
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
         autoremove: yes
         autoclean: yes
       tags: packages
 
-    # OPTIMIZATION 2: Parallel system configuration
-    - name: Configure system settings (timezone and hostname)
-      block:
-        - name: Set system timezone
-          community.general.timezone:
-            name: "{{ timezone }}"
-          
-        - name: Ensure hostname resolves in /etc/hosts
-          ansible.builtin.lineinfile:
-            path: /etc/hosts
-            line: "127.0.1.1 {{ ansible_hostname }}"
-            create: yes
-            backup: no  # Disabled backup for speed
-      tags: system
+  handlers:
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
 
-    # OPTIMIZATION 3: Combined DNS configuration
-    - name: Configure DNS settings
-      block:
-        - name: Configure systemd-resolved with DNS
-          ansible.builtin.blockinfile:
-            path: /etc/systemd/resolved.conf
-            block: |
-              [Resolve]
-              DNS={{ upstream_dns_servers | join(' ') }}
-              FallbackDNS={{ fallback_dns_servers | join(' ') }}
-              DNSStubListener=yes
-              Cache=yes
-              DNSOverTLS=no
-            backup: no  # Disabled backup for speed
-            marker: "# {mark} ANSIBLE MANAGED DNS BLOCK"
-          register: dns_config_changed
-
-        - name: Ensure /etc/resolv.conf points to systemd-resolved
-          ansible.builtin.file:
-            src: /run/systemd/resolve/stub-resolv.conf
-            dest: /etc/resolv.conf
-            state: link
-            force: yes
-          register: resolv_conf_changed
-
-        - name: Restart systemd-resolved if needed
-          ansible.builtin.systemd:
-            name: systemd-resolved
-            state: restarted
-            enabled: yes
-            daemon_reload: yes
-          when: dns_config_changed.changed or resolv_conf_changed.changed
-      tags: dns
-
-    # OPTIMIZATION 4: Combined Docker configuration
-    - name: Configure Docker
-      block:
-        - name: Create Docker daemon configuration directory
-          ansible.builtin.file:
-            path: /etc/docker
-            state: directory
-            owner: root
-            group: root
-            mode: '0755'
-
-        - name: Configure Docker DNS and logging
-          ansible.builtin.copy:
-            dest: /etc/docker/daemon.json
-            content: |
-              {
-                "dns": {{ upstream_dns_servers | to_json }},
-                "log-driver": "json-file",
-                "log-opts": {
-                  "max-size": "10m",
-                  "max-file": "3"
-                }
-              }
-            owner: root
-            group: root
-            mode: '0644'
-          register: docker_config_changed
-
-        - name: Add user to docker group
-          ansible.builtin.user:
-            name: "{{ new_user }}"
-            groups: docker
-            append: yes
-
-        - name: Start and enable Docker service
-          ansible.builtin.systemd:
-            name: docker
-            state: started
-            enabled: yes
-            daemon_reload: yes
-
-        - name: Restart Docker if config changed
-          ansible.builtin.systemd:
-            name: docker
-            state: restarted
-          when: docker_config_changed.changed
-      tags: docker
-
-    # OPTIMIZATION 5: Combined firewall configuration
-    - name: Configure UFW firewall
-      block:
-        - name: Configure UFW - Allow SSH
-          community.general.ufw:
-            rule: allow
-            name: OpenSSH
-
-        - name: Configure UFW - Allow monitoring ports
-          community.general.ufw:
-            rule: allow
-            port: "{{ item }}"
-            proto: tcp
-          loop:
-            - "3000"  # Grafana
-            - "9090"  # Prometheus
-            - "9093"  # Alertmanager
-
-        - name: Enable UFW firewall
-          community.general.ufw:
-            state: enabled
-            policy: deny
-            direction: incoming
-      tags: firewall
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
 
   post_tasks:
-    # OPTIMIZATION 6: Simplified verification
-    - name: Quick verification tests
-      block:
-        - name: Verify DNS resolution (quick test)
-          ansible.builtin.command: nslookup google.com 127.0.0.53
-          changed_when: false
-          failed_when: false
-          register: dns_test
-
-        - name: Verify Docker status
-          ansible.builtin.systemd:
-            name: docker
-            state: started
-            enabled: yes
-
-        - name: Display configuration summary
-          ansible.builtin.debug:
-            msg:
-              - "Configuration completed successfully!"
-              - "Hostname: {{ ansible_hostname }}"
-              - "IP Address: {{ ansible_default_ipv4.address }}"
-              - "DNS Servers: {{ upstream_dns_servers | join(', ') }}"
-              - "DNS Test: {{ 'PASS' if dns_test.rc == 0 else 'FAIL' }}"
-              - "Docker Status: Running"
-              - "Firewall: Enabled"
-              - "Passwordless sudo: Configured"
+    - name: Verify DNS resolution
+      ansible.builtin.command: nslookup google.com
+      changed_when: false
       tags: verify
+
+    - name: Verify Docker is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+      tags: verify
+
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "Configuration completed successfully!"
+          - "Hostname: {{ ansible_hostname }}"
+          - "IP Address: {{ ansible_default_ipv4.address | default('N/A') }}"
+          - "DNS Servers: {{ upstream_dns_servers | join(', ') }}"
+          - "Docker Status: Running"
+          - "Firewall: Enabled"
+          - "Passwordless sudo: Configured"
+      tags: always

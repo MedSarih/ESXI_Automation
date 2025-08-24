@@ -7,18 +7,6 @@ pipeline {
         ESXI_PASSWORD     = credentials('ESXI_PASSWORD')
         ANSIBLE_VM_CREDENTIALS = credentials('ANSIBLE_VM_CREDENTIALS')
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
-        
-        // OPTIMIZATION: Ansible performance environment variables
-        ANSIBLE_HOST_KEY_CHECKING = 'False'
-        ANSIBLE_SSH_PIPELINING = 'True'
-        ANSIBLE_GATHERING = 'smart'
-        ANSIBLE_FACT_CACHING = 'memory'
-        ANSIBLE_CALLBACK_WHITELIST = 'timer'
-        ANSIBLE_STRATEGY = 'free'
-        ANSIBLE_FORCE_HANDLERS = 'True'
-        ANSIBLE_TIMEOUT = '30'
-        ANSIBLE_CONNECT_TIMEOUT = '10'
-        ANSIBLE_COMMAND_TIMEOUT = '30'
     }
 
     triggers {
@@ -98,55 +86,37 @@ pipeline {
             }
         }
 
-        // OPTIMIZED Ansible execution with performance tuning
-        stage('Ansible Base Setup - OPTIMIZED') {
+        // --- Critical Fix Applied in Ansible Stages ---
+        stage('Ansible Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     withCredentials([
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')
                     ]) {
                         sh '''
-                            echo "=== Optimized Ansible Configuration ==="
-                            
-                            # Create optimized ansible.cfg
-                            cat > ansible.cfg << 'EOF'
-[defaults]
-host_key_checking = False
-timeout = 30
-gathering = smart
-fact_caching = memory
-callback_whitelist = timer, profile_tasks
-strategy = free
-forks = 10
-poll_interval = 1
-ssh_args = -C -o ControlMaster=auto -o ControlPersist=60s -o ControlPath=/tmp/ansible-ssh-%h-%p-%r -o StrictHostKeyChecking=no
-pipelining = True
-accelerate_port = 5099
-accelerate_timeout = 30
-accelerate_connect_timeout = 5.0
+                            echo "=== Setting Ansible Environment ==="
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            export ANSIBLE_BECOME_TIMEOUT=60
+                            export ANSIBLE_TIMEOUT=60
+                            export ANSIBLE_STDOUT_CALLBACK=yaml
+                            export ANSIBLE_FORCE_COLOR=true
 
-[ssh_connection]
-ssh_args = -C -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no
-pipelining = True
-control_path = /tmp/ansible-ssh-%%h-%%p-%%r
-EOF
-
-                            echo "=== Running OPTIMIZED Base Configuration ==="
-                            time ansible-playbook -i inventory.ini playbook-setup.yml \\
+                            echo "=== Running Base Configuration Playbook ==="
+                            ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER}" \\
                               --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS}" \\
                               --extra-vars "ansible_become_pass=${ANSIBLE_PASS}" \\
-                              --extra-vars "ansible_serial=5" \\
-                              --forks=10 \\
-                              --strategy=free \\
-                              --become
+                              --extra-vars "ansible_become_method=sudo" \\
+                              --ssh-common-args="-o StrictHostKeyChecking=no -o ControlMaster=no -o ControlPersist=no" \\
+                              --become \\
+                              -v
                         '''
                     }
                 }
             }
         }
 
-        stage('Ansible Monitoring Stack - OPTIMIZED') {
+        stage('Ansible Monitoring Stack') {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     withCredentials([
@@ -154,20 +124,26 @@ EOF
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
                         sh '''
-                            echo "=== Running OPTIMIZED Monitoring Stack ==="
-                            time ansible-playbook -i inventory.ini playbook-monitoring.yml \\
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER}" \\
-                              --extra-vars "ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              --extra-vars "grafana_admin_password=${GRAFANA_PASS}" \\
-                              --extra-vars "ansible_serial=5" \\
-                              --forks=10 \\
-                              --strategy=free \\
-                              --become
+                            # Set core Ansible environment variables for stability and correct become behavior
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            export ANSIBLE_BECOME_TIMEOUT=30
+                            export ANSIBLE_TIMEOUT=30
+                            export ANSIBLE_BECOME_FLAGS="-H -S -n"
+
+                            # Run the monitoring stack playbook with specific overrides
+                            # Use --ssh-common-args to avoid SSH option parsing issues
+                            ansible-playbook -i inventory.ini playbook-monitoring.yml \\
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
+                              --ssh-common-args="-o ControlMaster=no" \\
+                              -e 'ansible_become_method=sudo' \\
+                              -e 'ansible_become_exe=sudo -n' \\
+                              -vvv
                         '''
                     }
                 }
             }
         }
+        // --- End of Critical Fixes ---
     }
 
     post {
