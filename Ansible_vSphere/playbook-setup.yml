@@ -108,6 +108,7 @@
         state: restarted
         enabled: yes
 
+
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
