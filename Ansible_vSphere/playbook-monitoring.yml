@@ -42,6 +42,7 @@
         - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
         - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
+    # --- DOCKER IMAGES ---
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
         name: "{{ item.name }}"
@@ -51,17 +52,46 @@
         - { name: "prom/prometheus", tag: "v2.45.0" }
         - { name: "grafana/grafana", tag: "9.5.6" }
 
-    # ✅ Build Prometheus node targets safely
+    # --- PROMETHEUS CONFIGURATION ---
+    # Improved target building with debugging
+    - name: Debug hostvars for target hosts (Pre-Build)
+      ansible.builtin.debug:
+        msg:
+          - ">>> Building Targets for Host: {{ item }}"
+          - "  - ansible_host (Inventory): '{{ hostvars[item].get('ansible_host', 'UNDEFINED') }}'"
+          - "  - ansible_default_ipv4.address (Facts): '{{ hostvars[item].get('ansible_default_ipv4', {}).get('address', 'UNDEFINED_FACT') }}'"
+      loop: "{{ groups['all_servers'] }}"
+      tags: debug_targets
+
     - name: Build Prometheus node targets
       set_fact:
+        # Robustly extract IP and build target list
         prometheus_targets: >-
           {{
             groups['all_servers']
-            | map('extract', hostvars, ['ansible_host'])
-            | select('defined')
-            | map('regex_replace', '^(.*)$', '\\1:9100')
-            | list
+            | map('extract', hostvars) # Get hostvars dict for each host
+            | map('dict2items') # Convert dict to list of {key, value} items
+            | map('selectattr', 'key', 'eq', 'ansible_host') # Select the ansible_host item
+            | map('map_attribute', 'value') # Extract the value (IP) from the selected item
+            | select('defined') # Filter out undefined values
+            | select('ne', '') # Filter out empty strings
+            | map('regex_replace', '^(.+)$', '\1:9100') # Append :9100 port. \1 is the captured group.
+            | list # Convert to list
           }}
+
+    - name: Debug final Prometheus targets list
+      ansible.builtin.debug:
+        msg:
+          - "Final Prometheus Targets List:"
+          - "{{ prometheus_targets }}"
+      tags: debug_targets
+
+    - name: Fail if no valid targets found
+      ansible.builtin.assert:
+        that:
+          - prometheus_targets | length > 0
+        fail_msg: "No valid IP addresses found for Prometheus targets. Check host connectivity and facts."
+      tags: debug_targets
 
     - name: Create Prometheus configuration
       ansible.builtin.copy:
@@ -80,8 +110,10 @@
 
             - job_name: 'node'
               static_configs:
-                - targets: {{ prometheus_targets | to_nice_yaml(indent=12) | indent(12) }}
+                - targets:
+                  {{ prometheus_targets | to_nice_yaml(indent=2) | indent(4) }}
 
+    # --- CONTAINER DEPLOYMENT ---
     - name: Run Prometheus container
       community.docker.docker_container:
         name: prometheus
@@ -110,17 +142,19 @@
         volumes:
           - "{{ monitoring_data_dir }}/grafana:/var/lib/grafana"
 
-    - name: Allow Prometheus and Grafana ports through firewall
+    # --- NETWORK SECURITY ---
+    - name: Allow Prometheus, Grafana, and Node Exporter ports through firewall
       community.general.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp
       loop:
-        - "{{ prometheus_port }}"
-        - "{{ grafana_port }}"
-        - "9100"
+        - "{{ prometheus_port }}" # 9090
+        - "{{ grafana_port }}"    # 3000
+        - "9100"                  # Node Exporter
       tags: firewall
 
+    # --- POST-DEPLOYMENT ---
     - name: Wait for Prometheus to be ready
       ansible.builtin.uri:
         url: http://localhost:9090/-/ready
