@@ -1,5 +1,5 @@
 # ==============================
-# Monitoring Server Playbook
+# Monitoring Server Playbook (Optimized)
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
@@ -11,26 +11,44 @@
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
+    grafana_admin_user: admin
     grafana_admin_password: "{{ grafana_admin_password | default('grafanapassword') }}"
+    prometheus_uid: 65534   # nobody user in Prometheus container
+    prometheus_gid: 65534
+    grafana_uid: 472        # Grafana container user
+    grafana_gid: 472
 
   tasks:
+    - name: Ensure UFW is installed
+      ansible.builtin.package:
+        name: ufw
+        state: present
+
+    - name: Ensure UFW is enabled
+      community.general.ufw:
+        state: enabled
+        logging: on
+
     - name: Ensure monitoring directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         mode: '0755'
-        recurse: yes
       loop:
-        - "{{ monitoring_data_dir }}/prometheus/data"
+        - "{{ monitoring_data_dir }}/prometheus"
         - "{{ monitoring_data_dir }}/grafana"
 
-    - name: Fix Grafana data directory ownership (UID 472)
+    - name: Fix permissions for Prometheus and Grafana directories
       ansible.builtin.file:
-        path: "{{ monitoring_data_dir }}/grafana"
-        owner: 472
-        group: 472
-        mode: '0755'
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.uid }}"
+        group: "{{ item.gid }}"
         recurse: yes
+        mode: '0755'
+      loop:
+        - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
+        - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
@@ -44,8 +62,8 @@
     - name: Create Prometheus configuration with Node Exporter targets
       ansible.builtin.copy:
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-        owner: root
-        group: root
+        owner: "{{ prometheus_uid }}"
+        group: "{{ prometheus_gid }}"
         mode: '0644'
         content: |
           global:
@@ -59,9 +77,13 @@
             - job_name: 'node_exporter'
               static_configs:
                 - targets:
-            {% for host in groups['all'] %}
-                  - '{{ hostvars[host].ansible_host | default(host) }}:9100'
-            {% endfor %}
+                {% for host in groups['all'] %}
+                  {% if hostvars[host].ansible_host is defined %}
+                  - '{{ hostvars[host].ansible_host }}:9100'
+                  {% else %}
+                  - '{{ host }}:9100'
+                  {% endif %}
+                {% endfor %}
 
     - name: Run Prometheus container
       community.docker.docker_container:
@@ -69,15 +91,13 @@
         image: prom/prometheus:v2.45.0
         state: started
         restart_policy: always
+        recreate: yes
         ports:
-          - "0.0.0.0:{{ prometheus_port }}:9090"
+          - "{{ prometheus_port }}:9090"
         volumes:
-          - "{{ monitoring_data_dir }}/prometheus/data:/prometheus"
+          - "{{ monitoring_data_dir }}/prometheus:/prometheus"
           - "{{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
-        command: >
-          --config.file=/etc/prometheus/prometheus.yml
-          --storage.tsdb.path=/prometheus
-          --web.enable-lifecycle
+        command: "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
 
     - name: Run Grafana container
       community.docker.docker_container:
@@ -85,10 +105,11 @@
         image: grafana/grafana:9.5.6
         state: started
         restart_policy: always
+        recreate: yes
         ports:
-          - "0.0.0.0:{{ grafana_port }}:3000"
+          - "{{ grafana_port }}:3000"
         env:
-          GF_SECURITY_ADMIN_USER: admin
+          GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
           GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
           GF_USERS_ALLOW_SIGN_UP: "false"
         volumes:
@@ -102,4 +123,3 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
-      
