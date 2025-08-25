@@ -10,12 +10,14 @@
     prometheus_port: 9090
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
-    grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
+    grafana_admin_password: "{{ grafana_admin_password | default('grafanapassword') }}"
     prometheus_uid: 65534   # nobody user in Prometheus container
     prometheus_gid: 65534
     grafana_uid: 472        # Grafana container user
     grafana_gid: 472
     new_user: template
+    app_vm_host: "app-vm"   # <-- Change this to your App VM hostname or IP
+    app_vm_port: 5000       # Flask app port
 
   tasks:
     - name: Ensure monitoring directories exist
@@ -59,6 +61,9 @@
             - job_name: 'prometheus'
               static_configs:
                 - targets: ['localhost:9090']
+            - job_name: 'flask_app'
+              static_configs:
+                - targets: ['{{ app_vm_host }}:{{ app_vm_port }}']
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
         owner: "{{ prometheus_uid }}"
         group: "{{ prometheus_gid }}"
@@ -100,3 +105,12 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
+
+  post_tasks:
+    - name: Display summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ Monitoring server setup completed!"
+          - "Prometheus URL: http://{{ ansible_default_ipv4.address }}:{{ prometheus_port }}"
+          - "Grafana URL: http://{{ ansible_default_ipv4.address }}:{{ grafana_port }}"
+          - "Flask app being monitored at: {{ app_vm_host }}:{{ app_vm_port }}"
