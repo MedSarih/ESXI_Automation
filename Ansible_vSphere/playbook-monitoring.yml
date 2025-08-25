@@ -11,6 +11,10 @@
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
     grafana_admin_password: "{{ grafana_admin_password | default('SecureMonitoring123!') }}"
+    prometheus_uid: 65534   # nobody user in Prometheus container
+    prometheus_gid: 65534
+    grafana_uid: 472        # Grafana container user
+    grafana_gid: 472
     new_user: template
 
   tasks:
@@ -24,6 +28,18 @@
       loop:
         - "{{ monitoring_data_dir }}/prometheus"
         - "{{ monitoring_data_dir }}/grafana"
+
+    - name: Fix permissions for Prometheus and Grafana directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.uid }}"
+        group: "{{ item.gid }}"
+        recurse: yes
+        mode: '0755'
+      loop:
+        - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
+        - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
@@ -44,8 +60,8 @@
               static_configs:
                 - targets: ['localhost:9090']
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-        owner: "{{ new_user }}"
-        group: "{{ new_user }}"
+        owner: "{{ prometheus_uid }}"
+        group: "{{ prometheus_gid }}"
         mode: '0644'
 
     - name: Run Prometheus container

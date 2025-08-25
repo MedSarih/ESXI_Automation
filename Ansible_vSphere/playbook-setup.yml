@@ -164,6 +164,7 @@
         state: restarted
         enabled: yes
         daemon_reload: yes
+        
 
   post_tasks:
     - name: Verify DNS resolution
