@@ -167,7 +167,6 @@
       delay: 5
       ignore_errors: yes
 
-
     - name: Display monitoring stack summary
       ansible.builtin.debug:
         msg:
