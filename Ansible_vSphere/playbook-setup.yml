@@ -21,6 +21,7 @@
       - 1.1.1.1
       - 8.8.8.8
 
+
   pre_tasks:
     - name: Verify connectivity to target hosts
       ansible.builtin.ping:
