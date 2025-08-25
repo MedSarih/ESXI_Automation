@@ -42,41 +42,45 @@
         - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
         - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
-    # ✅ Pull images (WITHOUT unsupported 'retries' and 'delay')
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
         name: "{{ item.name }}"
         tag: "{{ item.tag }}"
         source: pull
-        # retries: 3  # <-- Removed: Unsupported parameter (caused error in Pasted_Text_1756143301509.txt)
-        # delay: 5    # <-- Removed: Unsupported parameter (caused error in Pasted_Text_1756143301509.txt)
       loop:
         - { name: "prom/prometheus", tag: "v2.45.0" }
         - { name: "grafana/grafana", tag: "9.5.6" }
 
-    # ✅ FIXED YAML INDENTATION IN THIS TASK (Fixes Pasted_Text_1756142493978.txt and manual fix)
+    # ✅ Build Prometheus node targets safely
+    - name: Build Prometheus node targets
+      set_fact:
+        prometheus_targets: >-
+          {{
+            groups['all_servers']
+            | map('extract', hostvars, ['ansible_host'])
+            | select('defined')
+            | map('regex_replace', '^(.*)$', '\\1:9100')
+            | list
+          }}
+
     - name: Create Prometheus configuration
       ansible.builtin.copy:
-        content: |
-          global:
-            scrape_interval: 15s
-          scrape_configs:
-            - job_name: 'prometheus'
-              static_configs:
-                - targets: ['localhost:9090']
-            - job_name: 'node'
-              static_configs:
-                - targets:
-                  {% for host in groups['all_servers'] %}
-                  {% set ip = hostvars[host].ansible_host | default('unknown') %}
-                  {% if ip != 'unknown' %}
-                  - '{{ ip }}:9100'
-                  {% endif %}
-                  {% endfor %}
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
         owner: "{{ prometheus_uid }}"
         group: "{{ prometheus_gid }}"
         mode: '0644'
+        content: |
+          global:
+            scrape_interval: 15s
+
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+
+            - job_name: 'node'
+              static_configs:
+                - targets: {{ prometheus_targets | to_nice_yaml(indent=12) | indent(12) }}
 
     - name: Run Prometheus container
       community.docker.docker_container:
