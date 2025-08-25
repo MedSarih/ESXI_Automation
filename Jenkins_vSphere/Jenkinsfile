@@ -9,6 +9,7 @@ pipeline {
         GRAFANA_PASS      = credentials('GRAFANA_ADMIN_PASSWORD')
     }
 
+
     triggers {
         githubPush()
     }
