@@ -42,20 +42,19 @@
         - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
         - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
-    # ✅ ADDED retries TO HANDLE TRANSIENT NETWORK FAILURES
+    # ✅ Pull images (WITHOUT unsupported 'retries' and 'delay')
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
         name: "{{ item.name }}"
         tag: "{{ item.tag }}"
         source: pull
-        # Add retries for transient failures like network timeouts
-        retries: 3
-        delay: 5
+        # retries: 3  # <-- Removed: Unsupported parameter
+        # delay: 5    # <-- Removed: Unsupported parameter
       loop:
         - { name: "prom/prometheus", tag: "v2.45.0" }
         - { name: "grafana/grafana", tag: "9.5.6" }
 
-    # ✅ FIXED YAML INDENTATION IN THIS TASK (Looks good!)
+    # ✅ FIXED YAML INDENTATION IN THIS TASK
     - name: Create Prometheus configuration
       ansible.builtin.copy:
         content: |
