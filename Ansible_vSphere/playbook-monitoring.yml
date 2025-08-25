@@ -16,15 +16,12 @@
     prometheus_gid: 65534
     grafana_uid: 472        # Grafana container user
     grafana_gid: 472
-    new_user: template
 
   tasks:
     - name: Ensure monitoring directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        owner: "{{ new_user }}"
-        group: "{{ new_user }}"
         mode: '0755'
       loop:
         - "{{ monitoring_data_dir }}/prometheus"
@@ -70,7 +67,11 @@
               static_configs:
                 - targets:
                 {% for host in groups['all'] %}
-                - '{{ hostvars[host].ansible_host | default(host) }}:9100'
+                  {% if hostvars[host].ansible_host is defined %}
+                  - '{{ hostvars[host].ansible_host }}:9100'
+                  {% else %}
+                  - '{{ host }}:9100'
+                  {% endif %}
                 {% endfor %}
 
     - name: Run Prometheus container
