@@ -17,8 +17,6 @@
     grafana_uid: 472        # Grafana container user
     grafana_gid: 472
     new_user: template
-    app_vm_host: "app-vm"   # Flask app VM IP or hostname
-    app_vm_port: 5000       # Flask app port
 
   tasks:
     - name: Ensure monitoring directories exist
@@ -62,10 +60,12 @@
             - job_name: 'prometheus'
               static_configs:
                 - targets: ['localhost:9090']
-            - job_name: 'flask_app'
-              metrics_path: /metrics
+            - job_name: 'node'
               static_configs:
-                - targets: ['{{ app_vm_host }}:{{ app_vm_port }}']
+                - targets: 
+                  {% for host in groups['all'] %}
+                  - '{{ hostvars[host].ansible_default_ipv4.address | default("unknown") }}:9100'
+                  {% endfor %}
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
         owner: "{{ prometheus_uid }}"
         group: "{{ prometheus_gid }}"
@@ -107,12 +107,23 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
+        - "9100"
+      tags: firewall
 
-  post_tasks:
-    - name: Display summary
+    - name: Wait for Prometheus to be ready
+      ansible.builtin.uri:
+        url: http://localhost:9090/-/ready
+        method: GET
+      register: prometheus_status
+      until: prometheus_status.status == 200
+      retries: 30
+      delay: 5
+      ignore_errors: yes
+
+    - name: Display monitoring stack summary
       ansible.builtin.debug:
         msg:
-          - "✅ Monitoring server setup completed!"
-          - "Prometheus URL: http://{{ ansible_default_ipv4.address }}:{{ prometheus_port }}"
-          - "Grafana URL: http://{{ ansible_default_ipv4.address }}:{{ grafana_port }}"
-          - "Flask app being monitored at: {{ app_vm_host }}:{{ app_vm_port }}"
+          - "✅ Monitoring stack deployed successfully!"
+          - "Prometheus: http://{{ ansible_default_ipv4.address }}:{{ prometheus_port }}"
+          - "Grafana: http://{{ ansible_default_ipv4.address }}:{{ grafana_port }}"
+    

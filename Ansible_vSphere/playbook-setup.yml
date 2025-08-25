@@ -1,8 +1,8 @@
 ---
 # ==============================
-# Main VM Configuration + Flask App Deployment
+# Main VM Configuration Playbook
 # ==============================
-- name: Configure VM and deploy Flask app
+- name: Configure all VMs (DNS, Users, System, Firewall, Docker DNS, Node Exporter)
   hosts: all
   gather_facts: yes
   become: yes
@@ -13,8 +13,6 @@
   vars:
     new_user: "{{ ansible_ssh_user | default('template') }}"
     timezone: "Africa/Casablanca"
-    project_name: "ESXI_Automation_at_Orange"
-    flask_app_dir: /opt/flask_app
 
     # Use VM gateway as primary DNS + fallbacks
     upstream_dns_servers:
@@ -26,6 +24,7 @@
   pre_tasks:
     - name: Verify connectivity to target hosts
       ansible.builtin.ping:
+      tags: always
 
     - name: Setup passwordless sudo for current user
       ansible.builtin.copy:
@@ -36,6 +35,7 @@
         group: root
         mode: '0440'
         validate: 'visudo -cf %s'
+      tags: ['always', 'sudo']
 
     - name: Verify passwordless sudo works
       ansible.builtin.command: whoami
@@ -43,6 +43,7 @@
       changed_when: false
       register: sudo_test
       failed_when: sudo_test.stdout != 'root'
+      tags: ['always', 'sudo']
 
   tasks:
     # --- DNS CONFIGURATION ---
@@ -52,6 +53,7 @@
         line: "127.0.1.1 {{ ansible_hostname }}"
         create: yes
         backup: yes
+      tags: dns
 
     - name: Write DNS servers directly into /etc/resolv.conf
       ansible.builtin.copy:
@@ -63,11 +65,13 @@
         owner: root
         group: root
         mode: '0644'
+      tags: dns
 
     - name: Update package cache
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
+      tags: packages
 
     - name: Install essential packages
       ansible.builtin.apt:
@@ -79,13 +83,14 @@
           - ufw
           - docker.io
           - docker-compose
-          - python3-pip
         state: present
         install_recommends: no
+      tags: packages
 
     - name: Set system timezone
       community.general.timezone:
         name: "{{ timezone }}"
+      tags: system
 
     - name: Create Docker daemon configuration directory
       ansible.builtin.file:
@@ -94,6 +99,7 @@
         owner: root
         group: root
         mode: '0755'
+      tags: docker
 
     - name: Configure Docker DNS
       ansible.builtin.copy:
@@ -111,88 +117,90 @@
         group: root
         mode: '0644'
       notify: Restart Docker
+      tags: docker
 
     - name: Add user to docker group
       ansible.builtin.user:
         name: "{{ new_user }}"
         groups: docker
         append: yes
+      tags: docker
 
     - name: Configure UFW - Allow SSH
       community.general.ufw:
         rule: allow
         name: OpenSSH
+      tags: firewall
+
+    - name: Configure UFW - Allow monitoring ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "3000"  # Grafana
+        - "9090"  # Prometheus
+        - "9093"  # Alertmanager
+        - "9100"  # Node Exporter
+      tags: firewall
 
     - name: Enable UFW firewall
       community.general.ufw:
         state: enabled
         policy: deny
         direction: incoming
+      tags: firewall
 
     - name: Upgrade all packages
       ansible.builtin.apt:
         upgrade: dist
         autoremove: yes
         autoclean: yes
+      tags: packages
 
-    # --- Flask App Deployment ---
-    - name: Create Flask app directory
-      ansible.builtin.file:
-        path: "{{ flask_app_dir }}"
-        state: directory
-        owner: "{{ new_user }}"
-        group: "{{ new_user }}"
-        mode: '0755'
+    # --- NODE EXPORTER INSTALLATION ---
+    - name: Download and install Node Exporter
+      ansible.builtin.unarchive:
+        src: https://github.com/prometheus/node_exporter/releases/download/v1.6.1/node_exporter-1.6.1.linux-amd64.tar.gz
+        dest: /tmp
+        remote_src: yes
+      tags: monitoring
 
-    - name: Create Flask app main file
+    - name: Move Node Exporter binary to /usr/local/bin
       ansible.builtin.copy:
-        dest: "{{ flask_app_dir }}/app.py"
+        src: /tmp/node_exporter-1.6.1.linux-amd64/node_exporter
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+      tags: monitoring
+
+    - name: Create Node Exporter systemd service
+      ansible.builtin.copy:
         content: |
-          from flask import Flask, Response
-          from prometheus_client import Counter, generate_latest
+          [Unit]
+          Description=Node Exporter
+          After=network.target
 
-          app = Flask(__name__)
+          [Service]
+          User=root
+          ExecStart=/usr/local/bin/node_exporter
+          Restart=always
 
-          # Metrics
-          REQUEST_COUNT = Counter('request_count', 'Number of requests')
-
-          @app.before_request
-          def before_request():
-              REQUEST_COUNT.inc()
-
-          @app.route('/')
-          def home():
-              return "Project: {{ project_name }}"
-
-          @app.route('/metrics')
-          def metrics():
-              return Response(generate_latest(), mimetype='text/plain')
-
-          if __name__ == "__main__":
-              app.run(host='0.0.0.0', port=5000)
-        owner: "{{ new_user }}"
-        group: "{{ new_user }}"
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/node_exporter.service
+        owner: root
+        group: root
         mode: '0644'
+      tags: monitoring
 
-    - name: Install Flask and Prometheus client using pip
-      ansible.builtin.pip:
-        name:
-          - flask
-          - prometheus_client
-        executable: pip3
-
-    - name: Run Flask app in Docker container
-      community.docker.docker_container:
-        name: flask_app
-        image: python:3.11-slim
+    - name: Enable and start Node Exporter service
+      ansible.builtin.systemd:
+        name: node_exporter
+        enabled: yes
         state: started
-        restart_policy: always
-        ports:
-          - "5000:5000"
-        command: >
-          bash -c "pip install flask prometheus_client && python /app/app.py"
-        volumes:
-          - "{{ flask_app_dir }}:/app"
+        daemon_reload: yes
+      tags: monitoring
 
   handlers:
     - name: Restart Docker
@@ -203,16 +211,34 @@
         daemon_reload: yes
 
   post_tasks:
+    - name: Verify DNS resolution
+      ansible.builtin.command: dig google.com
+      changed_when: false
+      tags: verify
+
     - name: Verify Docker is running
       ansible.builtin.systemd:
         name: docker
         state: started
         enabled: yes
+      tags: verify
 
-    - name: Display summary
+    - name: Verify Node Exporter is running
+      ansible.builtin.uri:
+        url: http://localhost:9100/metrics
+        method: GET
+      changed_when: false
+      tags: verify
+
+    - name: Display configuration summary
       ansible.builtin.debug:
         msg:
-          - "✅ VM setup completed successfully!"
-          - "✅ Flask app deployed and accessible on port 5000"
+          - "✅ Configuration completed successfully!"
           - "Hostname: {{ ansible_hostname }}"
           - "IP Address: {{ ansible_default_ipv4.address | default('N/A') }}"
+          - "DNS Servers: {{ (upstream_dns_servers + fallback_dns_servers) | join(', ') }}"
+          - "Docker Status: Running"
+          - "Firewall: Enabled"
+          - "Passwordless sudo: Configured"
+          - "Node Exporter: Running on port 9100"
+      tags: always
