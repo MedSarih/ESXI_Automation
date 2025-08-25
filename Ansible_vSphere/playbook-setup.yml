@@ -252,6 +252,7 @@
       changed_when: false
       tags: verify
 
+
     - name: Display configuration summary
       ansible.builtin.debug:
         msg:
