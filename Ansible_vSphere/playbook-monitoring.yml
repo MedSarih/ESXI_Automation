@@ -59,9 +59,9 @@
             - job_name: 'node_exporter'
               static_configs:
                 - targets:
-                {% for host in groups['all'] %}
+            {% for host in groups['all'] %}
                   - '{{ hostvars[host].ansible_host | default(host) }}:9100'
-                {% endfor %}
+            {% endfor %}
 
     - name: Run Prometheus container
       community.docker.docker_container:
