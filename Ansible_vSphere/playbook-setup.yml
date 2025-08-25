@@ -126,6 +126,26 @@
         append: yes
       tags: docker
 
+    # --- PACKAGE MANAGEMENT ---
+    # Fix for dpkg lock held by unattended-upgrades
+    - name: Wait for unattended upgrades to finish
+      ansible.builtin.shell: |
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+          echo "Waiting for unattended-upgrades to finish..."
+          sleep 10
+        done
+        echo "Lock released."
+      args:
+        executable: /bin/bash
+      tags: packages
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      tags: packages
+
     - name: Configure UFW - Allow SSH
       community.general.ufw:
         rule: allow
@@ -150,13 +170,6 @@
         policy: deny
         direction: incoming
       tags: firewall
-
-    - name: Upgrade all packages
-      ansible.builtin.apt:
-        upgrade: dist
-        autoremove: yes
-        autoclean: yes
-      tags: packages
 
     # --- NODE EXPORTER INSTALLATION ---
     - name: Download and install Node Exporter
@@ -202,6 +215,15 @@
         daemon_reload: yes
       tags: monitoring
 
+    # --- POST-CONFIGURATION ---
+    # Ensure Docker is fully restarted and ready
+    - name: Wait for Docker to be ready after restart
+      ansible.builtin.wait_for:
+        path: /var/run/docker.sock
+        delay: 5
+        timeout: 60
+      tags: docker
+
   handlers:
     - name: Restart Docker
       ansible.builtin.systemd:
@@ -229,7 +251,6 @@
         method: GET
       changed_when: false
       tags: verify
-
 
     - name: Display configuration summary
       ansible.builtin.debug:
