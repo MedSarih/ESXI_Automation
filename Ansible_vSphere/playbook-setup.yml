@@ -14,20 +14,18 @@
     new_user: "{{ ansible_ssh_user | default('template') }}"
     timezone: "Africa/Casablanca"
 
-    # Automatically use the VM's gateway as primary DNS
+    # Use VM gateway as primary DNS + fallbacks
     upstream_dns_servers:
       - "{{ ansible_default_ipv4.gateway }}"
     fallback_dns_servers:
       - 1.1.1.1
       - 8.8.8.8
 
-
   pre_tasks:
     - name: Verify connectivity to target hosts
       ansible.builtin.ping:
       tags: always
 
-    # 🔧 CRITICAL: Setup passwordless sudo FIRST
     - name: Setup passwordless sudo for current user
       ansible.builtin.copy:
         content: |
@@ -57,28 +55,17 @@
         backup: yes
       tags: dns
 
-    - name: Configure systemd-resolved with DNS
-      ansible.builtin.blockinfile:
-        path: /etc/systemd/resolved.conf
-        block: |
-          [Resolve]
-          DNS={{ upstream_dns_servers | join(' ') }}
-          FallbackDNS={{ fallback_dns_servers | join(' ') }}
-          DNSStubListener=yes
-        backup: yes
-        marker: "# {mark} ANSIBLE MANAGED DNS BLOCK"
-      notify: Restart systemd-resolved
-      tags: dns
-
-    - name: Ensure /etc/resolv.conf points to systemd-resolved stub
-      ansible.builtin.file:
-        src: /run/systemd/resolve/stub-resolv.conf
+    - name: Write DNS servers directly into /etc/resolv.conf
+      ansible.builtin.copy:
         dest: /etc/resolv.conf
-        state: link
-        force: yes
-      notify: Restart systemd-resolved
+        content: |
+          nameserver {{ ansible_default_ipv4.gateway }}
+          nameserver 1.1.1.1
+          nameserver 8.8.8.8
+        owner: root
+        group: root
+        mode: '0644'
       tags: dns
-    # --- END DNS CONFIGURATION ---
 
     - name: Update package cache
       ansible.builtin.apt:
@@ -96,7 +83,6 @@
           - ufw
           - docker.io
           - docker-compose
-          - systemd-resolved
         state: present
         install_recommends: no
       tags: packages
@@ -120,7 +106,7 @@
         dest: /etc/docker/daemon.json
         content: |
           {
-            "dns": {{ upstream_dns_servers | to_json }},
+            "dns": {{ (upstream_dns_servers + fallback_dns_servers) | to_json }},
             "log-driver": "json-file",
             "log-opts": {
               "max-size": "10m",
@@ -172,13 +158,6 @@
       tags: packages
 
   handlers:
-    - name: Restart systemd-resolved
-      ansible.builtin.systemd:
-        name: systemd-resolved
-        state: restarted
-        enabled: yes
-        daemon_reload: yes
-
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
@@ -188,7 +167,7 @@
 
   post_tasks:
     - name: Verify DNS resolution
-      ansible.builtin.command: nslookup google.com
+      ansible.builtin.command: dig google.com
       changed_when: false
       tags: verify
 
@@ -202,10 +181,10 @@
     - name: Display configuration summary
       ansible.builtin.debug:
         msg:
-          - "Configuration completed successfully!"
+          - "✅ Configuration completed successfully!"
           - "Hostname: {{ ansible_hostname }}"
           - "IP Address: {{ ansible_default_ipv4.address | default('N/A') }}"
-          - "DNS Servers: {{ upstream_dns_servers | join(', ') }}"
+          - "DNS Servers: {{ (upstream_dns_servers + fallback_dns_servers) | join(', ') }}"
           - "Docker Status: Running"
           - "Firewall: Enabled"
           - "Passwordless sudo: Configured"
