@@ -48,13 +48,13 @@
         name: "{{ item.name }}"
         tag: "{{ item.tag }}"
         source: pull
-        # retries: 3  # <-- Removed: Unsupported parameter
-        # delay: 5    # <-- Removed: Unsupported parameter
+        # retries: 3  # <-- Removed: Unsupported parameter (caused error in Pasted_Text_1756143301509.txt)
+        # delay: 5    # <-- Removed: Unsupported parameter (caused error in Pasted_Text_1756143301509.txt)
       loop:
         - { name: "prom/prometheus", tag: "v2.45.0" }
         - { name: "grafana/grafana", tag: "9.5.6" }
 
-    # ✅ FIXED YAML INDENTATION IN THIS TASK
+    # ✅ FIXED YAML INDENTATION IN THIS TASK (Fixes Pasted_Text_1756142493978.txt and manual fix)
     - name: Create Prometheus configuration
       ansible.builtin.copy:
         content: |
