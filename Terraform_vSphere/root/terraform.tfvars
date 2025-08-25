@@ -9,7 +9,7 @@ nic_type        = "vmxnet3"
 
 
 vm_configs = {
-  app-terraform = {
+  app-vMachine = {
     cpu           = 4
     memory        = 4096
     disk_size     = 40
@@ -18,7 +18,7 @@ vm_configs = {
     network       = "VM Network"
     role          = "application"
   }
-  monitoring-terraform = {
+  monitoring-vMachine = {
     cpu           = 4
     memory        = 4096
     disk_size     = 40

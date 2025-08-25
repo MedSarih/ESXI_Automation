@@ -1,3 +1,4 @@
+---
 # ==============================
 # Monitoring Server Playbook
 # ==============================
@@ -16,7 +17,7 @@
     grafana_uid: 472        # Grafana container user
     grafana_gid: 472
     new_user: template
-    app_vm_host: "app-vm"   # <-- Change this to your App VM hostname or IP
+    app_vm_host: "app-vm"   # Flask app VM IP or hostname
     app_vm_port: 5000       # Flask app port
 
   tasks:
@@ -62,6 +63,7 @@
               static_configs:
                 - targets: ['localhost:9090']
             - job_name: 'flask_app'
+              metrics_path: /metrics
               static_configs:
                 - targets: ['{{ app_vm_host }}:{{ app_vm_port }}']
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"

@@ -47,7 +47,7 @@ resource "esxi_guest" "vm" {
     "metadata.encoding" = "base64"
   }
 
- notes = "Role: ${var.role}, Managed by Terraform"
+ notes = "Role: ${var.role}, Managed by Terraform_Mohammed"
 
 
 

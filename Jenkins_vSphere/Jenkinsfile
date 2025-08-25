@@ -86,26 +86,35 @@ pipeline {
             }
         }
 
+        stage('Fetch App VM IP') {
+            steps {
+                script {
+                    APP_VM_IP = sh(
+                        script: "jq -r '.app_vm_ip.value' ${WORKSPACE}/${ANSIBLE_DIR}/terraform-output.json",
+                        returnStdout: true
+                    ).trim()
+                    echo "App VM IP: ${APP_VM_IP}"
+                }
+            }
+        }
+
         stage('Ansible Base Setup') {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     withCredentials([
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS')
                     ]) {
-                        sh '''
-                            # Simplified Ansible environment variables
+                        sh """
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=60
                             export ANSIBLE_TIMEOUT=60
                             export ANSIBLE_BECOME_METHOD=sudo
                             export ANSIBLE_BECOME_FLAGS=""
 
-                            # Run the base configuration playbook
                             ansible-playbook -i inventory.ini playbook-setup.yml \\
                               --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS}" \\
-                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" \\
-                              -vvv
-                        '''
+                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" -vvv
+                        """
                     }
                 }
             }
@@ -118,20 +127,17 @@ pipeline {
                         usernamePassword(credentialsId: 'ANSIBLE_VM_CREDENTIALS', usernameVariable: 'ANSIBLE_USER', passwordVariable: 'ANSIBLE_PASS'),
                         string(credentialsId: 'GRAFANA_ADMIN_PASSWORD', variable: 'GRAFANA_PASS')
                     ]) {
-                        sh '''
-                            # Simplified Ansible environment variables
+                        sh """
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             export ANSIBLE_BECOME_TIMEOUT=60
                             export ANSIBLE_TIMEOUT=60
                             export ANSIBLE_BECOME_METHOD=sudo
                             export ANSIBLE_BECOME_FLAGS=""
 
-                            # Run the monitoring stack playbook
                             ansible-playbook -i inventory.ini playbook-monitoring.yml \\
-                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS}" \\
-                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" \\
-                              -vvv
-                        '''
+                              --extra-vars "ansible_ssh_user=${ANSIBLE_USER} ansible_ssh_pass=${ANSIBLE_PASS} grafana_admin_password=${GRAFANA_PASS} app_vm_host=${APP_VM_IP}" \\
+                              --ssh-common-args="-o ControlMaster=no -o ConnectTimeout=30" -vvv
+                        """
                     }
                 }
             }
@@ -139,14 +145,14 @@ pipeline {
     }
 
     post {
-         success {
-        echo '✅ Deployment successful!'
-        echo '🎉 VMs are set up and ready!'
-        echo '📊 Prometheus: http://10.67.6.240:9090/'
-        echo '📈 Grafana: http://10.67.6.240:3000/'
-        echo '💻 app-vMachine: ssh template@10.67.6.230'
-        echo '💻 monitoring-vMachine: ssh template@10.67.6.240'
-    }
+        success {
+            echo '✅ Deployment successful!'
+            echo '🎉 VMs are set up and ready!'
+            echo "📊 Prometheus: http://${APP_VM_IP}:9090/"
+            echo "📈 Grafana: http://${APP_VM_IP}:3000/"
+            echo "💻 app-vMachine: ssh template@${APP_VM_IP}"
+            echo "💻 monitoring-vMachine: ssh template@${APP_VM_IP}"
+        }
         failure {
             echo '❌ Deployment failed!'
         }
@@ -154,5 +160,4 @@ pipeline {
             cleanWs()
         }
     }
-
 }
