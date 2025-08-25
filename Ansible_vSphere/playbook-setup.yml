@@ -14,12 +14,12 @@
     new_user: "{{ ansible_ssh_user | default('template') }}"
     timezone: "Africa/Casablanca"
 
+    # Automatically use the VM's gateway as primary DNS
     upstream_dns_servers:
-      - 8.8.8.8
-      - 1.1.1.1
+      - "{{ ansible_default_ipv4.gateway }}"
     fallback_dns_servers:
-      - 8.8.4.4
-      - 1.0.0.1
+      - 1.1.1.1
+      - 8.8.8.8
 
   pre_tasks:
     - name: Verify connectivity to target hosts
@@ -29,14 +29,12 @@
     # 🔧 CRITICAL: Setup passwordless sudo FIRST
     - name: Setup passwordless sudo for current user
       ansible.builtin.copy:
-        # Use literal block scalar for clean content
         content: |
           {{ new_user }} ALL=(ALL) NOPASSWD:ALL
         dest: "/etc/sudoers.d/{{ new_user }}"
         owner: root
         group: root
         mode: '0440'
-        # Validate the sudoers file syntax
         validate: 'visudo -cf %s'
       tags: ['always', 'sudo']
 
@@ -49,10 +47,7 @@
       tags: ['always', 'sudo']
 
   tasks:
-    # Now all subsequent tasks can use passwordless sudo
-
     # --- DNS CONFIGURATION ---
-    # 1. Ensure the local hostname resolves correctly
     - name: Ensure hostname resolves in /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
@@ -61,7 +56,6 @@
         backup: yes
       tags: dns
 
-    # 2. Configure systemd-resolved with upstream DNS servers
     - name: Configure systemd-resolved with DNS
       ansible.builtin.blockinfile:
         path: /etc/systemd/resolved.conf
@@ -69,25 +63,18 @@
           [Resolve]
           DNS={{ upstream_dns_servers | join(' ') }}
           FallbackDNS={{ fallback_dns_servers | join(' ') }}
-          # Use the stub listener for local applications
           DNSStubListener=yes
-          # Optional: Enable caching
-          # Cache=yes
-          # Optional: Disable DNS over TLS if causing issues
-          # DNSOverTLS=no
         backup: yes
         marker: "# {mark} ANSIBLE MANAGED DNS BLOCK"
       notify: Restart systemd-resolved
       tags: dns
 
-    # 3. Ensure /etc/resolv.conf points to the systemd-resolved stub
     - name: Ensure /etc/resolv.conf points to systemd-resolved stub
       ansible.builtin.file:
-        # Use stub-resolv.conf for the stub listener (127.0.0.53)
         src: /run/systemd/resolve/stub-resolv.conf
         dest: /etc/resolv.conf
         state: link
-        force: yes # Overwrite existing file/link if necessary
+        force: yes
       notify: Restart systemd-resolved
       tags: dns
     # --- END DNS CONFIGURATION ---
@@ -108,7 +95,7 @@
           - ufw
           - docker.io
           - docker-compose
-          - systemd-resolved # Ensure the service is installed
+          - systemd-resolved
         state: present
         install_recommends: no
       tags: packages
