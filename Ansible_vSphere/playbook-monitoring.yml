@@ -51,6 +51,7 @@
         - { name: "prom/prometheus", tag: "v2.45.0" }
         - { name: "grafana/grafana", tag: "9.5.6" }
 
+    # ✅ FIXED YAML INDENTATION IN THIS TASK
     - name: Create Prometheus configuration
       ansible.builtin.copy:
         content: |
