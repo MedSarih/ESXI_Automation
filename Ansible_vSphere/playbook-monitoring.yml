@@ -62,9 +62,12 @@
                 - targets: ['localhost:9090']
             - job_name: 'node'
               static_configs:
-                - targets: 
-                  {% for host in groups['all'] %}
-                  - '{{ hostvars[host].ansible_default_ipv4.address | default("unknown") }}:9100'
+                - targets:
+                  {% for host in groups['all_servers'] %}
+                  {% set ip = hostvars[host].ansible_host | default('unknown') %}
+                  {% if ip != 'unknown' %}
+                  - '{{ ip }}:9100'
+                  {% endif %}
                   {% endfor %}
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
         owner: "{{ prometheus_uid }}"
@@ -126,4 +129,4 @@
           - "✅ Monitoring stack deployed successfully!"
           - "Prometheus: http://{{ ansible_default_ipv4.address }}:{{ prometheus_port }}"
           - "Grafana: http://{{ ansible_default_ipv4.address }}:{{ grafana_port }}"
-    
+          
