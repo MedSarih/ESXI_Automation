@@ -12,10 +12,6 @@
     grafana_port: 3000
     monitoring_data_dir: /opt/monitoring
     grafana_admin_password: "{{ grafana_admin_password | default('grafanapassword') }}"
-    prometheus_uid: 65534   # nobody user in Prometheus container
-    prometheus_gid: 65534
-    grafana_uid: 472        # Grafana container user
-    grafana_gid: 472
 
   tasks:
     - name: Ensure monitoring directories exist
@@ -24,20 +20,8 @@
         state: directory
         mode: '0755'
       loop:
-        - "{{ monitoring_data_dir }}/prometheus"
+        - "{{ monitoring_data_dir }}/prometheus/data"
         - "{{ monitoring_data_dir }}/grafana"
-
-    - name: Fix permissions for Prometheus and Grafana directories
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: directory
-        owner: "{{ item.uid }}"
-        group: "{{ item.gid }}"
-        recurse: yes
-        mode: '0755'
-      loop:
-        - { path: "{{ monitoring_data_dir }}/prometheus", uid: "{{ prometheus_uid }}", gid: "{{ prometheus_gid }}" }
-        - { path: "{{ monitoring_data_dir }}/grafana", uid: "{{ grafana_uid }}", gid: "{{ grafana_gid }}" }
 
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
@@ -51,8 +35,8 @@
     - name: Create Prometheus configuration with Node Exporter targets
       ansible.builtin.copy:
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-        owner: "{{ prometheus_uid }}"
-        group: "{{ prometheus_gid }}"
+        owner: root
+        group: root
         mode: '0644'
         content: |
           global:
@@ -66,13 +50,13 @@
             - job_name: 'node_exporter'
               static_configs:
                 - targets:
-                {% for host in groups['all'] %}
+          {% for host in groups['all'] %}
                   {% if hostvars[host].ansible_host is defined %}
                   - '{{ hostvars[host].ansible_host }}:9100'
                   {% else %}
                   - '{{ host }}:9100'
                   {% endif %}
-                {% endfor %}
+          {% endfor %}
 
     - name: Run Prometheus container
       community.docker.docker_container:
@@ -83,9 +67,12 @@
         ports:
           - "{{ prometheus_port }}:9090"
         volumes:
-          - "{{ monitoring_data_dir }}/prometheus:/prometheus"
+          - "{{ monitoring_data_dir }}/prometheus/data:/prometheus"
           - "{{ monitoring_data_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
-        command: "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+        command: >
+          --config.file=/etc/prometheus/prometheus.yml
+          --storage.tsdb.path=/prometheus
+          --web.enable-lifecycle
 
     - name: Run Grafana container
       community.docker.docker_container:
@@ -109,4 +96,4 @@
         proto: tcp
       loop:
         - "{{ prometheus_port }}"
-        - "{{ grafana_port }}"  
+        - "{{ grafana_port }}"
