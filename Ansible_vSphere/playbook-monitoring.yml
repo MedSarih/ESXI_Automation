@@ -1,6 +1,5 @@
-
 # ==============================
-# Monitoring Server Playbook 
+# Monitoring Server Playbook (Prometheus & Grafana)
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
@@ -37,9 +36,18 @@
         path: "{{ item }}"
         state: directory
         mode: '0755'
+        owner: root
+        group: root
       loop:
         - "{{ monitoring_data_dir }}/prometheus"
         - "{{ monitoring_data_dir }}/grafana"
+
+    - name: Set correct ownership for Grafana data directory
+      ansible.builtin.file:
+        path: "{{ monitoring_data_dir }}/grafana"
+        owner: 472
+        group: 472
+        mode: '0755'
 
     - name: Create Docker volume for Prometheus data
       community.docker.docker_volume:
@@ -60,35 +68,30 @@
             | list
           }}
 
-    - name: Create Prometheus configuration using structured data
+    - name: Build Prometheus configuration as YAML string
+      set_fact:
+        prometheus_config: |
+          global:
+            scrape_interval: 15s
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+            - job_name: 'node_exporter'
+              static_configs:
+                - targets: {{ node_targets }}
+
+    - name: Create Prometheus configuration file
       ansible.builtin.copy:
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-        content: |
-          {{ {
-              'global': {'scrape_interval': '15s'},
-              'scrape_configs': [
-                  {
-                      'job_name': 'prometheus',
-                      'static_configs': [{'targets': ['localhost:9090']}]
-                  },
-                  {
-                      'job_name': 'node_exporter',
-                      'static_configs': [{'targets': node_targets}]
-                  }
-              ]
-          } | to_nice_yaml }}
+        content: "{{ prometheus_config }}"
         owner: root
         group: root
         mode: '0644'
 
-    - name: Check Prometheus config exists
-      ansible.builtin.stat:
-        path: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
-      register: prometheus_stat
-
-    - name: Debug Prometheus file existence
-      debug:
-        msg: "Prometheus config exists: {{ prometheus_stat.stat.exists }}"
+    - name: Debug Prometheus config path
+      ansible.builtin.debug:
+        msg: "Prometheus config written to {{ monitoring_data_dir }}/prometheus/prometheus.yml"
 
     - name: Pull Prometheus and Grafana images
       community.docker.docker_image:
@@ -96,8 +99,10 @@
         tag: "{{ item.tag }}"
         source: pull
       loop:
-        - { name: "{{ prometheus_image.split(':')[0] }}", tag: "{{ prometheus_image.split(':')[1] }}" }
-        - { name: "{{ grafana_image.split(':')[0] }}", tag: "{{ grafana_image.split(':')[1] }}" }
+        - name: "{{ prometheus_image.split(':')[0] }}"
+          tag: "{{ prometheus_image.split(':')[1] }}"
+        - name: "{{ grafana_image.split(':')[0] }}"
+          tag: "{{ grafana_image.split(':')[1] }}"
 
     - name: Run Prometheus container
       community.docker.docker_container:
@@ -140,3 +145,25 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
+
+  # =====================================
+  # Post-tasks: confirm services & info
+  # =====================================
+  post_tasks:
+    - name: Confirm Prometheus is running
+      ansible.builtin.command: docker inspect -f '{{"{{.State.Running}}"}}' prometheus
+      register: prometheus_running
+      until: prometheus_running.stdout == "True"
+      retries: 6
+      delay: 5
+      ignore_errors: true
+
+    - name: Print access URLs
+      ansible.builtin.debug:
+        msg: |
+          =========================================
+          Monitoring Access Info:
+          Prometheus: http://{{ ansible_host }}:{{ prometheus_port }}
+          Grafana: http://{{ ansible_host }}:{{ grafana_port }}
+          Login: {{ grafana_admin_user }} / {{ grafana_admin_password }}
+          =========================================
