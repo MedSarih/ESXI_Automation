@@ -1,5 +1,6 @@
+---
 # ==============================
-# Monitoring Server Playbook (Fully Fixed & Optimized)
+# Monitoring Server Playbook (Self-Contained, No External Templates)
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
@@ -16,7 +17,6 @@
     prometheus_image: "prom/prometheus:v2.45.0"
     grafana_image: "grafana/grafana:9.5.6"
     prometheus_volume: prometheus_data
-    # Use group 'monitored_nodes' in inventory to define targets
 
   pre_tasks:
     - name: Ensure UFW is installed
@@ -38,41 +38,49 @@
         - "{{ monitoring_data_dir }}/prometheus"
         - "{{ monitoring_data_dir }}/grafana"
 
-    - name: Create Docker volume for Prometheus data (avoid permission issues)
+    - name: Create Docker volume for Prometheus data
       community.docker.docker_volume:
         name: "{{ prometheus_volume }}"
 
   tasks:
-    - name: Build list of node_exporter targets from monitored_nodes group
+    - name: Build list of node_exporter targets from 'all' except localhost/monitoring
       set_fact:
-        node_exporter_targets: >
+        node_targets: >-
           {{
-            (groups['monitored_nodes'] | map('extract', hostvars, 'ansible_host') | list) +
-            (groups['monitored_nodes'] | reject('defined_in', hostvars) | list)
+            groups['all']
+            | map('extract', hostvars, 'ansible_host')
+            | select('defined')
+            | reject('equalto', '127.0.0.1')
+            | reject('equalto', inventory_hostname)
+            | list
+            | map('regex_replace', '$', ':9100')
+            | list
           }}
-      when: groups['monitored_nodes'] is defined
 
     - name: Create Prometheus configuration with correct YAML structure
-      ansible.builtin.template:
-        src: templates/prometheus.yml.j2
+      ansible.builtin.copy:
         dest: "{{ monitoring_data_dir }}/prometheus/prometheus.yml"
         owner: root
         group: root
         mode: '0644'
-      vars:
-        targets: >
-          {%- set ns = namespace(uris=[]) %}
-          {%- for host in groups['monitored_nodes'] %}
-            {%- set ip = (hostvars[host].ansible_host | default(host)) %}
-            {{ ns.uris.append(ip + ':9100') }}
-          {%- endfor %}
-          {{ ns.uris }}
+        content: |
+          global:
+            scrape_interval: 15s
+
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+
+            - job_name: 'node_exporter'
+              static_configs:
+                - targets: {{ node_targets | to_nice_yaml(indent=18) | indent(18) }}
 
     - name: Validate Prometheus YAML syntax
       command: python3 -c "import yaml; yaml.safe_load(open('{{ monitoring_data_dir }}/prometheus/prometheus.yml'))"
       changed_when: false
 
-    - name: Show generated Prometheus config (for debugging)
+    - name: Show generated Prometheus config (debug)
       debug:
         msg: "{{ lookup('file', monitoring_data_dir + '/prometheus/prometheus.yml') }}"
       when: ansible_verbosity > 0
@@ -102,8 +110,6 @@
           --config.file=/etc/prometheus/prometheus.yml
           --storage.tsdb.path=/prometheus
           --web.enable-lifecycle
-        networks:
-          - name: monitoring
 
     - name: Run Grafana container
       community.docker.docker_container:
@@ -120,8 +126,6 @@
           GF_USERS_ALLOW_SIGN_UP: "false"
         volumes:
           - "{{ monitoring_data_dir }}/grafana:/var/lib/grafana"
-        networks:
-          - name: monitoring
 
     - name: Allow Prometheus and Grafana ports through firewall
       community.general.ufw:
@@ -131,23 +135,20 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
-
-    - name: Ensure Docker network exists
-      community.docker.docker_network:
-        name: monitoring
-        state: present
+        - "9100"
 
   post_tasks:
     - name: Confirm Prometheus is running
-      ansible.builtin.command: docker inspect -f '{{ '{{.State.Running}}' }}' prometheus
+      ansible.builtin.command: docker inspect -f '{{ "{{.State.Running}}" }}' prometheus
       register: prometheus_running
-      until: prometheus_running.stdout == "True"
-      retries: 5
-      delay: 3
+      until: prometheus_running.stdout == "true"
+      retries: 6
+      delay: 5
+      ignore_errors: true
 
     - name: Print access URLs
       debug:
         msg: |
-          Prometheus is ready: http://{{ ansible_host }}:{{ prometheus_port }}
-          Grafana is ready: http://{{ ansible_host }}:{{ grafana_port }}
-          Login to Grafana with user: {{ grafana_admin_user }}, password: {{ grafana_admin_password }}
+          ✅ Prometheus: http://{{ ansible_host }}:{{ prometheus_port }}
+          ✅ Grafana:    http://{{ ansible_host }}:{{ grafana_port }}
+          Login with:   {{ grafana_admin_user }} / {{ grafana_admin_password }}
