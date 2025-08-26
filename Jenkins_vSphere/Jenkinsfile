@@ -144,11 +144,11 @@ pipeline {
         success {
             echo '✅ Deployment successful!'
             echo '🎉 VMs are set up and ready!'
-            echo '📊 Prometheus: http://10.67.6.240:9090/'
-            echo '📈 Grafana: http://10.67.6.240:3000/'
-            echo '💻 app-vMachine: ssh template@10.67.6.230'
-            echo '💻 monitoring-vMachine: ssh template@10.67.6.240'
-            echo '🔍 Node Exporter Metrics: http://10.67.6.230:9100/metrics'
+            echo '📊 Prometheus: http://10.222.199.240:9090/'
+            echo '📈 Grafana: http://10.222.199.240:3000/'
+            echo '💻 app-vMachine: ssh template@10.222.199.230'
+            echo '💻 monitoring-vMachine: ssh template@10.222.199.240'
+            echo '🔍 Node Exporter Metrics: http://10.222.199.240:9100/metrics'
         }
         failure {
             echo '❌ Deployment failed!'
