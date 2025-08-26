@@ -48,7 +48,4 @@ resource "esxi_guest" "vm" {
   }
 
  notes = "Role: ${var.role}, Managed by Terraform_Mohammed"
-
-
-
 }
