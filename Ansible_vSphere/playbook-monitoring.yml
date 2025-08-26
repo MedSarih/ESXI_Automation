@@ -1,5 +1,6 @@
+
 # ==============================
-# Monitoring Server Playbook (Jenkins-Ready)
+# Monitoring Server Playbook 
 # ==============================
 - name: Setup Monitoring Server (Prometheus & Grafana)
   hosts: monitoring_servers
@@ -50,14 +51,14 @@
   tasks:
     - name: Build list of node_exporter targets
       set_fact:
-        node_targets: "{{
-          groups['all'] |
-          map('extract', hostvars, 'ansible_host') |
-          select('defined') |
-          list |
-          map('regex_replace', '$', ':9100') |
-          list
-        }}"
+        node_targets: >-
+          {{
+            groups['all']
+            | map('extract', hostvars, 'ansible_host')
+            | select('defined')
+            | map('regex_replace', '$', ':9100')
+            | list
+          }}
 
     - name: Create Prometheus configuration using structured data
       ansible.builtin.copy:
@@ -139,25 +140,3 @@
       loop:
         - "{{ prometheus_port }}"
         - "{{ grafana_port }}"
-
-  # =====================================
-  # Post-tasks: confirm services & info
-  # =====================================
-  post_tasks:
-    - name: Confirm Prometheus is running
-      ansible.builtin.command: docker inspect -f '{{ "{{.State.Running}}" }}' prometheus
-      register: prometheus_running
-      until: prometheus_running.stdout == "True"
-      retries: 6
-      delay: 5
-      ignore_errors: true
-
-    - name: Print access URLs
-      debug:
-        msg: |
-          =========================================
-          Monitoring Access Info:
-          Prometheus: http://{{ ansible_host }}:{{ prometheus_port }}
-          Grafana: http://{{ ansible_host }}:{{ grafana_port }}
-          Login: {{ grafana_admin_user }} / {{ grafana_admin_password }}
-          =========================================
