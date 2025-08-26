@@ -23,7 +23,6 @@ if ! jq -e . "$TERRAFORM_OUTPUT" > /dev/null 2>&1; then
   exit 1
 fi
 
-
 echo "🔍 Parsing VMs from vm_inventory.value..."
 
 # Start fresh inventory
