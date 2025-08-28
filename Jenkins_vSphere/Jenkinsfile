@@ -140,15 +140,33 @@ pipeline {
     }
 
 
+     stage('Extract VM IPs') {
+            steps {
+                script {
+                    def tf_output = readJSON file: "${TERRAFORM_DIR}/raw_output.json"
+
+                    // Extract IPs from vm_ips map
+                    def vm_ips = tf_output.vm_ips.value
+
+                    def app_ip = vm_ips["app-vMachine"]
+                    def monitoring_ip = vm_ips["monitoring-vMachine"]
+
+                    // Export to env for later stages & post
+                    env.APP_IP = app_ip
+                    env.MONITORING_IP = monitoring_ip
+                }
+            }
+        }
+
     post {
         success {
             echo '✅ Deployment successful!'
             echo '🎉 VMs are set up and ready!'
-            echo '📊 Prometheus: http://10.191.81.240:9090/'
-            echo '📈 Grafana: http://10.191.81.240:3000/'
-            echo '💻 app-vMachine: ssh template@10.191.81.230'
-            echo '💻 monitoring-vMachine: ssh template@10.191.81.240'
-            echo '🔍 Node Exporter Metrics: http://10.191.81.240:9100/metrics'
+            echo "📊 Prometheus: http://${env.MONITORING_IP}:9090/"
+            echo "📈 Grafana: http://${env.MONITORING_IP}:3000/"
+            echo "💻 app-vMachine: ssh template@${env.APP_IP}"
+            echo "💻 monitoring-vMachine: ssh template@${env.MONITORING_IP}"
+            echo "🔍 Node Exporter Metrics: http://${env.MONITORING_IP}:9100/metrics"
         }
         failure {
             echo '❌ Deployment failed!'
@@ -157,4 +175,5 @@ pipeline {
             cleanWs()
         }
     }
+
 }

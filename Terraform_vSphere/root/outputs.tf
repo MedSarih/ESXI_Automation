@@ -7,15 +7,5 @@ output "vm_ips" {
   }
 }
 
-output "vm_inventory" {
-  description = "VM inventory for Ansible"
-  value = {
-    for name, cfg in var.vm_configs : name => {
-      name         = name
-      ip           = module.vm[name].vm_ip
-      ansible_user = "template"
-      role         = cfg.role
-    }
-  }
-}
+
 
