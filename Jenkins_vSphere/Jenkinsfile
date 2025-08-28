@@ -14,7 +14,7 @@ pipeline {
     }
     
     
-    
+
     stages {
         stage('Checkout Code') {
             steps {
@@ -141,7 +141,7 @@ pipeline {
     }
 
 
-     stage('Extract VM IPs') {
+        stage('Extract VM IPs') {
             steps {
                 script {
                     def tf_output = readJSON file: "${TERRAFORM_DIR}/raw_output.json"
