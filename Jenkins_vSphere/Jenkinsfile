@@ -1,6 +1,5 @@
 pipeline {
     agent any
-
     environment {
         TERRAFORM_DIR     = "Terraform_vSphere/root"
         ANSIBLE_DIR       = "Ansible_vSphere"

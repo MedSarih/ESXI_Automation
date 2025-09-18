@@ -1,8 +1,8 @@
-esxi_hostname   = "10.191.81.11"
+esxi_hostname   = "192.168.11.133"
 esxi_username   = "root"
 esxi_password   = "Mohammeds2003."
-vm_ip_subnet    = "10.191.81"
-vm_gateway      = "10.191.81.137"
+vm_ip_subnet    = "192.168.11"
+vm_gateway      = "192.168.11.1"
 esxi_hostport   = "22"
 clone_source_vm = "templateVM"
 nic_type        = "vmxnet3"
@@ -18,6 +18,7 @@ vm_configs = {
     network       = "VM Network"
     role          = "application"
   }
+
   monitoring-vMachine = {
     cpu           = 4
     memory        = 4096
