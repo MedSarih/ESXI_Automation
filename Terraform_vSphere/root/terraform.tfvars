@@ -7,7 +7,6 @@ esxi_hostport   = "22"
 clone_source_vm = "templateVM"
 nic_type        = "vmxnet3"
 
-
 vm_configs = {
   app1-vMachine = {
     cpu           = 4
