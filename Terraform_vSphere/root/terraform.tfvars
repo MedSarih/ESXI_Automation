@@ -8,7 +8,7 @@ clone_source_vm = "templateVM"
 nic_type        = "vmxnet3"
 
 vm_configs = {
-  app1-vMachine = {
+  app-vMachine = {
     cpu           = 4
     memory        = 4096
     disk_size     = 40
@@ -18,16 +18,7 @@ vm_configs = {
     role          = "application"
   }
 
-    app2-vMachine = {
-    cpu           = 4
-    memory        = 4096
-    disk_size     = 40
-    ip_last_octet = 220
-    datastore     = "datastore1"
-    network       = "VM Network"
-    role          = "application"
-  }
-
+  
 
 
   monitoring-vMachine = {
