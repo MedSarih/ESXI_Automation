@@ -18,6 +18,7 @@ vm_configs = {
     network       = "VM Network"
     role          = "application"
   }
+  
 
   monitoring-vMachine = {
     cpu           = 4
