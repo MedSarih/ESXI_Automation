@@ -18,7 +18,15 @@ vm_configs = {
     role          = "application"
   }
 
-  
+  web-vMachine = {
+    cpu           = 4
+    memory        = 4096
+    disk_size     = 40
+    ip_last_octet = 230
+    datastore     = "datastore1"
+    network       = "VM Network"
+    role          = "application"
+  }
 
 
   monitoring-vMachine = {
