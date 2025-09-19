@@ -13,7 +13,7 @@ Terraform – Provisions VMs in vSphere based on VM templates.
 Ansible – Configures provisioned VMs and deploys a monitoring stack.
 
 Monitoring – Prometheus + Grafana deployed via Docker to monitor the infrastructure.
-
+```plaintext
 📂 Project Structure
 ESXI_AUTOMATION_
 ├── Ansible_vSphere/
@@ -34,7 +34,7 @@ ESXI_AUTOMATION_
 │       ├── outputs.tf
 │       ├── terraform.tfvars     # Variables (credentials, VM specs, etc.)
 │       └── variables.tf
-
+```
 
 ⚙️ Workflow
 
