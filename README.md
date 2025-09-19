@@ -12,7 +12,8 @@ This project automates the provisioning and configuration of **VMware vSphere VM
 - **Ansible** – Configures provisioned VMs and deploys a monitoring stack  
 - **Monitoring** – Prometheus + Grafana deployed via Docker to monitor the infrastructure  
 
-![Architecture Diagram](./drawnew.png)
+![Architecture Diagram![Uploading drawnew.png…]()
+](./drawnew.png)
 
 
 ```plaintext
