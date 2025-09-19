@@ -39,16 +39,11 @@ ESXI_AUTOMATION_
         └── variables.tf
 ```
 
-⚙️ Workflow
+## ⚙️ Workflow
 
-Developer pushes code to GitHub.
-
-Jenkins pipeline is triggered.
-
-Terraform provisions VMs on VMware vSphere.
-
-Terraform generates inventory.ini for Ansible.
-
-Ansible configures the VMs and deploys monitoring stack (Prometheus + Grafana).
-
-Infrastructure is ready and monitored via Grafana dashboards.
+1. **Developer** pushes code to **GitHub**  
+2. **Jenkins** pipeline is triggered  
+3. **Terraform** provisions VMs on **VMware vSphere**  
+4. Terraform generates **inventory.ini** for **Ansible**  
+5. **Ansible** configures the VMs and deploys monitoring stack (**Prometheus + Grafana**)  
+6. Infrastructure is ready and monitored via **Grafana dashboards**  
