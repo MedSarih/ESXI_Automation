@@ -1,5 +1,6 @@
 pipeline {
     agent any
+
     environment {
         TERRAFORM_DIR     = "Terraform_vSphere/root"
         ANSIBLE_DIR       = "Ansible_vSphere"
@@ -139,15 +140,18 @@ pipeline {
     }
 
 
+
     post {
         success {
             echo '✅ Deployment successful!'
             echo '🎉 VMs are set up and ready!'
-            echo '📊 Prometheus: http://10.191.81.240:9090/'
-            echo '📈 Grafana: http://10.191.81.240:3000/'
-            echo '💻 app-vMachine: ssh template@10.191.81.230'
-            echo '💻 monitoring-vMachine: ssh template@10.191.81.240'
-            echo '🔍 Node Exporter Metrics: http://10.191.81.240:9100/metrics'
+            echo '📊 Prometheus: http://192.168.11.240:9090/'
+            echo '🔍 Node Exporter Metrics: http://192.168.11.240:9100/metrics'
+            echo '📈 Grafana: http://192.168.11.240:3000/'
+            echo '💻 app1-vMachine: ssh template@192.168.11.230'
+            echo '💻 app2-vMachine: ssh template@192.168.11.220'
+            echo '💻 monitoring-vMachine: ssh template@192.168.11.240'
+
         }
         failure {
             echo '❌ Deployment failed!'
