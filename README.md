@@ -13,8 +13,7 @@ This project automates the provisioning and configuration of **VMware vSphere VM
 - **Monitoring** – Prometheus + Grafana deployed via Docker to monitor the infrastructure  
 
 
-![Uploading drawnew.png…]()
-
+<img width="1363" height="583" alt="Image" src="https://github.com/user-attachments/assets/d34692f9-cdf3-4f11-a838-55583c85ba36" />
 
 ```plaintext
 📂 Project Structure
