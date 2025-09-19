@@ -25,15 +25,15 @@ ESXI_AUTOMATION_
 │   └── Jenkinsfile              # CI/CD pipeline definition
 │
 ├── Terraform_vSphere/
-│   ├── modules/vm/              # Terraform module for VM provisioning
-│   │   ├── main.tf
-│   │   ├── outputs.tf
-│   │   ├── variables.tf
-│   └── root/
-│       ├── main.tf
-│       ├── outputs.tf
-│       ├── terraform.tfvars     # Variables (credentials, VM specs, etc.)
-│       └── variables.tf
+    ├── modules/vm/              # Terraform module for VM provisioning
+    │   ├── main.tf
+    │   ├── outputs.tf
+    │   ├── variables.tf
+    └── root/
+        ├── main.tf
+        ├── outputs.tf
+        ├── terraform.tfvars     # Variables (credentials, VM specs, etc.)
+        └── variables.tf
 ```
 
 ⚙️ Workflow
