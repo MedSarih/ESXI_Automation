@@ -12,11 +12,12 @@ This project automates the provisioning and configuration of **VMware vSphere VM
 - **Ansible** – Configures provisioned VMs and deploys a monitoring stack  
 - **Monitoring** – Prometheus + Grafana deployed via Docker to monitor the infrastructure  
 
-
+## 📌 Architecture diagram 
 <img width="1363" height="583" alt="Image" src="https://github.com/user-attachments/assets/d34692f9-cdf3-4f11-a838-55583c85ba36" />
 
+## 📂 Project Structure
+
 ```plaintext
-📂 Project Structure
 ESXI_AUTOMATION_
 ├── Ansible_vSphere/
 │   ├── generated_inventory.sh   # Script to generate Ansible inventory dynamically
