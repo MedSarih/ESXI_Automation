@@ -1,18 +1,20 @@
-🚀 ESXi Automation with Terraform, Ansible & Jenkins
+# 🚀 ESXi Automation with Terraform, Ansible & Jenkins
 
-This project automates the provisioning and configuration of VMware vSphere VMs using Terraform, Ansible, and Jenkins, with monitoring enabled via Prometheus & Grafana.
+This project automates the provisioning and configuration of **VMware vSphere VMs** using **Terraform**, **Ansible**, and **Jenkins**, with monitoring enabled via **Prometheus & Grafana**.
 
-📌 Architecture Overview
+---
 
-GitHub – Source code repository.
+## 📌 Architecture Overview
 
-Jenkins – CI/CD pipeline triggered by GitHub push events.
+- **GitHub** – Source code repository  
+- **Jenkins** – CI/CD pipeline triggered by GitHub push events  
+- **Terraform** – Provisions VMs in vSphere based on VM templates  
+- **Ansible** – Configures provisioned VMs and deploys a monitoring stack  
+- **Monitoring** – Prometheus + Grafana deployed via Docker to monitor the infrastructure  
 
-Terraform – Provisions VMs in vSphere based on VM templates.
+![Architecture Diagram](./drawnew.png)
 
-Ansible – Configures provisioned VMs and deploys a monitoring stack.
 
-Monitoring – Prometheus + Grafana deployed via Docker to monitor the infrastructure.
 ```plaintext
 📂 Project Structure
 ESXI_AUTOMATION_
@@ -24,7 +26,7 @@ ESXI_AUTOMATION_
 ├── Jenkins_vSphere/
 │   └── Jenkinsfile              # CI/CD pipeline definition
 │
-├── Terraform_vSphere/
+└──Terraform_vSphere/
     ├── modules/vm/              # Terraform module for VM provisioning
     │   ├── main.tf
     │   ├── outputs.tf
